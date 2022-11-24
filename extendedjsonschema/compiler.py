@@ -35,7 +35,11 @@ class Program:
             field = f"'{self.field}'" if self.field else ""
             result.append(f"{' ' * (depth * indent)}{field}:")
 
-        result.append(f"{' ' * ((depth + d) * indent)}Program <{hex(id(self))}>:")
+        empty = ""
+        if not self._has_programs:
+            empty = " empty"
+
+        result.append(f"{' ' * ((depth + d) * indent)}Program <{hex(id(self))}>:{empty}")
 
         if self._general:
             general = "\n".join([f"{keyword.to_string(depth + 2 + d, indent)}" for _, keyword in self._general])

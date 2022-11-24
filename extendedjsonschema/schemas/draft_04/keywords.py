@@ -218,6 +218,12 @@ class AdditionalItems(Keyword):
             else:
                 return None
 
+    def to_string(self, depth: int = 0, indent: int = 2):
+        if type(self.value) == bool:
+            return super().to_string(depth, indent)
+        else:
+            return f"{' ' * depth * indent}{self.name}:\n{self._program.to_string(depth + 1, indent)}"
+
 
 class MinItems(Keyword):
     name = "minItems"
@@ -599,6 +605,11 @@ class AdditionalProperties(Keyword):
                 else:
                     return None
 
+    def to_string(self, depth: int = 0, indent: int = 2):
+        if type(self.value) == bool:
+            return super().to_string(depth, indent)
+        else:
+            return f"{' ' * depth*indent}{self.name}:\n{self._program.to_string(depth + 1, indent)}"
 
 class Required(Keyword):
     name = "required"
