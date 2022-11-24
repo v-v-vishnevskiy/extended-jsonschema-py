@@ -23,6 +23,7 @@ from extendedjsonschema.schemas.draft_04.keywords import (
     MinLength,
     MinProperties,
     MultipleOf,
+    Not,
     Pattern,
     PatternProperties,
     Properties,
@@ -37,9 +38,11 @@ logger = logging.getLogger(__name__)
 class Compiler(BaseCompiler):
     def __init__(self):
         self.keywords = {
-            # general
+            # General
             Enum.name: Enum,
             Type.name: Type,
+            # Schema Composition
+            Not.name: Not,
             # Array
             Items.name: Items,
             AdditionalItems.name: AdditionalItems,

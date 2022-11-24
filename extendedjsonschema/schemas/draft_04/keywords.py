@@ -85,6 +85,33 @@ class Enum(Keyword):
         return self.program
 
 
+# schema composition
+class Not(Keyword):
+    __slots__ = "_program"
+    name = "not"
+
+    def __init__(self, value: JSON, compiler: Compiler, path: List[Union[str, int]], rules: Dict[str, Keyword]):
+        super().__init__(value, compiler, path, rules)
+        self._program = None
+
+    def validate(self):
+        if type(self.value) != dict:
+            raise SchemaError(self.path, "It must be an object")
+
+    def program(self, value: JSON) -> List[Error]:
+        if not self._program.run(value):
+            return [Error([], self)]
+        else:
+            return []
+
+    def compile(self) -> Union[None, RULE]:
+        self._program = self.compiler.run(self.value)
+        return self.program
+
+    def to_string(self, depth: int = 0, indent: int = 2):
+        return f"{' ' * depth*indent}{self.name}:\n{self._program.to_string(depth + 1, indent)}"
+
+
 # Array
 class Items(Keyword):
     __slots__ = "_program_list", "_program_tuple"
