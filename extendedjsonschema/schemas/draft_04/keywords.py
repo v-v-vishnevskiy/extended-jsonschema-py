@@ -1,7 +1,7 @@
 import re
 from typing import Dict, List, Union
 
-from extendedjsonschema.compiler import Compiler
+from extendedjsonschema.schema import Schema
 from extendedjsonschema.errors import SchemaError
 from extendedjsonschema.keyword import Keyword
 from extendedjsonschema.utils import JSON, RULE, Error
@@ -21,8 +21,8 @@ class Type(Keyword):
         "string": str
     }
 
-    def __init__(self, value: JSON, compiler: Compiler, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, compiler, path, rules)
+    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
+        super().__init__(value, schema, path, rules)
         self._compiled_value = None
 
     def validate(self):
@@ -64,8 +64,8 @@ class Enum(Keyword):
     __slots__ = "_enum_values"
     name = "enum"
 
-    def __init__(self, value: JSON, compiler: Compiler, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, compiler, path, rules)
+    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
+        super().__init__(value, schema, path, rules)
         self._enum_values = set()
 
     def validate(self):
@@ -90,8 +90,8 @@ class AllOf(Keyword):
     __slots__ = "_programs"
     name = "allOf"
 
-    def __init__(self, value: JSON, compiler: Compiler, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, compiler, path, rules)
+    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
+        super().__init__(value, schema, path, rules)
         self._programs = []
 
     def validate(self):
@@ -107,7 +107,7 @@ class AllOf(Keyword):
 
     def compile(self) -> Union[None, RULE]:
         for item in self.value:
-            self._programs.append(self.compiler.run(item))
+            self._programs.append(self.schema.compile(item))
         return self.program
 
     def to_string(self, depth: int = 0, indent: int = 2):
@@ -122,8 +122,8 @@ class AnyOf(Keyword):
     __slots__ = "_programs"
     name = "anyOf"
 
-    def __init__(self, value: JSON, compiler: Compiler, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, compiler, path, rules)
+    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
+        super().__init__(value, schema, path, rules)
         self._programs = []
 
     def validate(self):
@@ -146,7 +146,7 @@ class AnyOf(Keyword):
 
     def compile(self) -> Union[None, RULE]:
         for item in self.value:
-            self._programs.append(self.compiler.run(item))
+            self._programs.append(self.schema.compile(item))
         return self.program
 
     def to_string(self, depth: int = 0, indent: int = 2):
@@ -161,8 +161,8 @@ class OneOf(Keyword):
     __slots__ = "_programs"
     name = "oneOf"
 
-    def __init__(self, value: JSON, compiler: Compiler, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, compiler, path, rules)
+    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
+        super().__init__(value, schema, path, rules)
         self._programs = []
 
     def validate(self):
@@ -184,7 +184,7 @@ class OneOf(Keyword):
 
     def compile(self) -> Union[None, RULE]:
         for item in self.value:
-            self._programs.append(self.compiler.run(item))
+            self._programs.append(self.schema.compile(item))
         return self.program
 
     def to_string(self, depth: int = 0, indent: int = 2):
@@ -200,8 +200,8 @@ class Not(Keyword):
     __slots__ = "_program"
     name = "not"
 
-    def __init__(self, value: JSON, compiler: Compiler, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, compiler, path, rules)
+    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
+        super().__init__(value, schema, path, rules)
         self._program = None
 
     def validate(self):
@@ -209,7 +209,7 @@ class Not(Keyword):
             raise SchemaError(self.path, "It must be an object")
 
     def compile(self) -> Union[None, RULE]:
-        self._program = self.compiler.run(self.value)
+        self._program = self.schema.compile(self.value)
         return self._program.run
 
     def to_string(self, depth: int = 0, indent: int = 2):
@@ -222,8 +222,8 @@ class Items(Keyword):
     name = "items"
     type = "array"
 
-    def __init__(self, value: JSON, compiler: Compiler, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, compiler, path, rules)
+    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
+        super().__init__(value, schema, path, rules)
         self._program_list = None
         self._program_tuple = []
 
@@ -248,10 +248,10 @@ class Items(Keyword):
 
     def compile(self) -> Union[None, RULE]:
         if type(self.value) == dict:
-            self._program_list = self.compiler.run(self.value)
+            self._program_list = self.schema.compile(self.value)
             return self.program_list
         else:
-            self._program_tuple = [self.compiler.run(item) for item in self.value]
+            self._program_tuple = [self.schema.compile(item) for item in self.value]
             return self.program_tuple
 
     def to_string(self, depth: int = 0, indent: int = 2):
@@ -270,8 +270,8 @@ class AdditionalItems(Keyword):
     name = "additionalItems"
     type = "array"
 
-    def __init__(self, value: JSON, compiler: Compiler, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, compiler, path, rules)
+    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
+        super().__init__(value, schema, path, rules)
         self._program = None
         self._items_tuple_programs = 0
 
@@ -298,7 +298,7 @@ class AdditionalItems(Keyword):
         elif self.value is False:
             return self.false_program
         else:
-            self._program = self.compiler.run(self.value)
+            self._program = self.schema.compile(self.value)
             if self._program:
                 return self.program
             else:
@@ -356,8 +356,8 @@ class UniqueItems(Keyword):
     name = "uniqueItems"
     type = "array"
 
-    def __init__(self, value: JSON, compiler: Compiler, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, compiler, path, rules)
+    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
+        super().__init__(value, schema, path, rules)
         self._gen = {list: lambda data: enumerate(data), dict: lambda data: data.items()}
 
     def validate(self):
@@ -508,8 +508,8 @@ class Properties(Keyword):
     name = "properties"
     type = "object"
 
-    def __init__(self, value: JSON, compiler: Compiler, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, compiler, path, rules)
+    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
+        super().__init__(value, schema, path, rules)
         self._programs = {}
 
     def validate(self):
@@ -532,7 +532,7 @@ class Properties(Keyword):
 
     def compile(self) -> Union[None, RULE]:
         for k, v in self.value.items():
-            self._programs[k] = self.compiler.run(v, self.path + [k])
+            self._programs[k] = self.schema.compile(v, self.path + [k])
         return self.program
 
     def to_string(self, depth: int = 0, indent: int = 2):
@@ -545,8 +545,8 @@ class PatternProperties(Keyword):
     name = "patternProperties"
     type = "object"
 
-    def __init__(self, value: JSON, compiler: Compiler, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, compiler, path, rules)
+    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
+        super().__init__(value, schema, path, rules)
         self._programs = {}
         self._properties = set()
 
@@ -584,7 +584,7 @@ class PatternProperties(Keyword):
             self._properties = set(self.rules.keys())
         for k, v in self.value.items():
             # TODO: use cache for checking regular expressions
-            self._programs[k] = (re.compile(k).match, self.compiler.run(v, self.path + [k]))
+            self._programs[k] = (re.compile(k).match, self.schema.compile(v, self.path + [k]))
         return self.program
 
     def to_string(self, depth: int = 0, indent: int = 2):
@@ -597,8 +597,8 @@ class AdditionalProperties(Keyword):
     name = "additionalProperties"
     type = "object"
 
-    def __init__(self, value: JSON, compiler: Compiler, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, compiler, path, rules)
+    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
+        super().__init__(value, schema, path, rules)
         self._properties = set()
         self._program = None
         self._patternProperties = []
@@ -651,7 +651,7 @@ class AdditionalProperties(Keyword):
             if self.value is False:
                 return self.false_program
             else:
-                self._program = self.compiler.run(self.value)
+                self._program = self.schema.compile(self.value)
                 if self._program:
                     return self.program
                 else:
@@ -780,8 +780,8 @@ class Pattern(Keyword):
     name = "pattern"
     type = "string"
 
-    def __init__(self, value: JSON, compiler: Compiler, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, compiler, path, rules)
+    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
+        super().__init__(value, schema, path, rules)
         self._prog = None
 
     def validate(self):
@@ -808,8 +808,8 @@ class Format(Keyword):
     _prog_bad_hostname = re.compile(r"(^[^a-zA-Z0-9]){1}|([^a-zA-Z0-9.-]+)|([.-]{2,})|([a-zA-Z0-9-]){65,}|([^a-zA-Z0-9.]$){1}")
     _prog_bad_uri_scheme = re.compile(r"(^[^a-zA-Z]){1}|([^a-zA-Z0-9.+-])+")
 
-    def __init__(self, value: JSON, compiler: Compiler, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, compiler, path, rules)
+    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
+        super().__init__(value, schema, path, rules)
         self.valid_formats = {
             "date-time": self._datetime_program,
             "email": self._email_program,

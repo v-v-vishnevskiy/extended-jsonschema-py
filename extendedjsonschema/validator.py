@@ -1,27 +1,25 @@
 from collections import defaultdict
-from typing import Optional
+from typing import Type
 
-from extendedjsonschema.compiler import Compiler
+from extendedjsonschema.schema import Schema
 from extendedjsonschema.errors import SchemaError, ValidationError
-from extendedjsonschema.schemas.draft_04.compiler import Compiler as CompilerDraft04
+from extendedjsonschema.schemas.draft_04.schema import Schema as SchemaDraft04
 from extendedjsonschema.utils import JSON
 
 
 class Validator:
-    def __init__(self, schema: dict, compiler: Optional[Compiler] = None):
-        self.schema = schema
-        self.compilers = {
-            "http://json-schema.org/schema#": CompilerDraft04,
-            "http://json-schema.org/draft-04/schema#": CompilerDraft04
+    def __init__(self, schema_definition: dict):
+        self.schemas = {
+            "http://json-schema.org/schema#": SchemaDraft04,
+            "http://json-schema.org/draft-04/schema#": SchemaDraft04
         }
-        if not compiler:
-            compiler = self._compiler(schema.get("$schema", "http://json-schema.org/draft-04/schema#"))
+        schema_cls = self._schema(schema_definition.get("$schema", "http://json-schema.org/draft-04/schema#"))
 
-        self._program = compiler.run(schema)
+        self._program = schema_cls().compile(schema_definition)
 
-    def _compiler(self, dialect: str) -> Compiler:
+    def _schema(self, dialect: str) -> Type[Schema]:
         try:
-            return self.compilers[dialect]()
+            return self.schemas[dialect]
         except KeyError:
             raise SchemaError(["$schema"], f"Invalid dialect (a version of JSON Schema): {dialect}")
 

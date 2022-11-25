@@ -1,9 +1,9 @@
 import logging
 from collections import defaultdict
-from typing import Dict, List, Set, Union
+from typing import Dict, List, Set, Type, Union
 
-from extendedjsonschema.compiler import Compiler as BaseCompiler
-from extendedjsonschema.compiler import Program
+from extendedjsonschema.schema import Schema as BaseSchema
+from extendedjsonschema.schema import Program
 from extendedjsonschema.errors import SchemaError
 from extendedjsonschema.keyword import Keyword
 from extendedjsonschema.schemas.draft_04.keywords import (
@@ -38,9 +38,9 @@ from extendedjsonschema.schemas.draft_04.keywords import (
 logger = logging.getLogger(__name__)
 
 
-class Compiler(BaseCompiler):
+class Schema(BaseSchema):
     def __init__(self):
-        self.keywords = {
+        self.keywords: Dict[str, Type[Keyword]] = {
             # General
             Enum.name: Enum,
             Type.name: Type,
@@ -112,7 +112,7 @@ class Compiler(BaseCompiler):
 
         return Program(general_rules, type_specific_rules, field)
 
-    def run(self, schema: dict, path: List[Union[str, int]] = None) -> Program:
+    def compile(self, schema: dict, path: List[Union[str, int]] = None) -> Program:
         if type(schema) != dict:
             raise SchemaError([], "JSON Schema must be an object")
 

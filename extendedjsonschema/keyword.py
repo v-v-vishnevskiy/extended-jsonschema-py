@@ -1,17 +1,17 @@
 from typing import Dict, List, Tuple, Union
 
-from extendedjsonschema.compiler import Compiler
+from extendedjsonschema.schema import Schema
 from extendedjsonschema.utils import JSON, RULE
 
 
 class Keyword:
-    __slots__ = "value", "compiler", "path", "rules"
+    __slots__ = "value", "schema", "path", "rules"
     name: str = None
     type: Union[str, Tuple[str, ...]] = None
 
-    def __init__(self, value: JSON, compiler: Compiler, path: List[Union[str, int]], rules: Dict[str, "Keyword"]):
+    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, "Keyword"]):
         self.value = value
-        self.compiler = compiler
+        self.schema = schema
         self.path = path
         self.rules = rules
 
