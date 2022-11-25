@@ -752,7 +752,7 @@ class MinProperties(Keyword):
     type = "object"
 
     def validate(self):
-        if type(self.value) == int:
+        if type(self.value) != int:
             raise SchemaError(self.path, "It must be an integer")
         elif self.value < 0:
             raise SchemaError(self.path, "It must be a non-negative integer")
