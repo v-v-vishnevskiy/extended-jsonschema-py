@@ -157,6 +157,44 @@ class AnyOf(Keyword):
         return f"{' ' * depth * indent}{self.name}:\n{programs}"
 
 
+class OneOf(Keyword):
+    __slots__ = "_programs"
+    name = "oneOf"
+
+    def __init__(self, value: JSON, compiler: Compiler, path: List[Union[str, int]], rules: Dict[str, Keyword]):
+        super().__init__(value, compiler, path, rules)
+        self._programs = []
+
+    def validate(self):
+        if type(self.value) != list:
+            raise SchemaError(self.path, "It must be an array")
+        for i, item in enumerate(self.value):
+            if type(item) != dict:
+                raise SchemaError(self.path + [i], "It must be an object")
+
+    def program(self, value: JSON) -> List[Error]:
+        n_successes = 0
+        for p in self._programs:
+            if not p.run(value):
+                n_successes += 1
+        if n_successes == 1:
+            return []
+        else:
+            return [Error([], self)]
+
+    def compile(self) -> Union[None, RULE]:
+        for item in self.value:
+            self._programs.append(self.compiler.run(item))
+        return self.program
+
+    def to_string(self, depth: int = 0, indent: int = 2):
+        programs = "\n".join([
+            f"{' ' * (depth + 1) * indent}{i}:\n{p.to_string(depth + 2, indent)}"
+            for i, p in enumerate(self._programs)
+        ])
+        return f"{' ' * depth * indent}{self.name}:\n{programs}"
+
+
 # schema composition
 class Not(Keyword):
     __slots__ = "_program"

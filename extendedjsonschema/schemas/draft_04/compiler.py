@@ -26,6 +26,7 @@ from extendedjsonschema.schemas.draft_04.keywords import (
     MinProperties,
     MultipleOf,
     Not,
+    OneOf,
     Pattern,
     PatternProperties,
     Properties,
@@ -46,6 +47,7 @@ class Compiler(BaseCompiler):
             # Schema Composition
             AllOf.name: AllOf,
             AnyOf.name: AnyOf,
+            OneOf.name: OneOf,
             Not.name: Not,
             # Array
             Items.name: Items,
