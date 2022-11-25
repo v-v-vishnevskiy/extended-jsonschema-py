@@ -47,9 +47,10 @@ class Program:
 
         if self._type_specific:
             type_specific = []
-            for keywords in self._type_specific.values():
+            for t, keywords in self._type_specific.items():
+                type_specific.append(f"{' ' * ((depth + 2 + d)*indent)}{t}")
                 for _, keyword in keywords:
-                    type_specific.append(f"{keyword.to_string(depth + 2 + d, indent)}")
+                    type_specific.append(f"{keyword.to_string(depth + 3 + d, indent)}")
             type_specific = "\n".join(type_specific)
             result.append(f"{' ' * ((depth + 1 + d)*indent)}Type Specific:\n{type_specific}")
 

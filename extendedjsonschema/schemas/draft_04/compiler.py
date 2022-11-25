@@ -10,6 +10,7 @@ from extendedjsonschema.schemas.draft_04.keywords import (
     AdditionalItems,
     AdditionalProperties,
     AllOf,
+    AnyOf,
     Enum,
     ExclusiveMaximum,
     ExclusiveMinimum,
@@ -44,6 +45,7 @@ class Compiler(BaseCompiler):
             Type.name: Type,
             # Schema Composition
             AllOf.name: AllOf,
+            AnyOf.name: AnyOf,
             Not.name: Not,
             # Array
             Items.name: Items,
