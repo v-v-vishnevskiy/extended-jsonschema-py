@@ -10,4 +10,4 @@ class Error:
     keyword: "Keyword"
 
 
-RULE = Callable[[JSON], List[Error]]
+RULE = Callable[[JSON], None]

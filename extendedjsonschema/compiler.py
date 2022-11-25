@@ -13,18 +13,9 @@ class Program:
     def __bool__(self) -> bool:
         return self._has_programs
 
-    def run(self, data: JSON) -> List[Error]:
-        errors = []
-        for fn, k in self._general:
-            errors += fn(data)
-
-        if errors:
-            return errors
-
-        for fn, k in self._type_specific.get(type(data), []):
-            errors += fn(data)
-
-        return errors
+    def run(self, path: List[Union[str, int]], data: JSON, errors: List[Error]):
+        for fn, k in self._general + self._type_specific.get(type(data), []):
+            fn(path, data, errors)
 
     def to_string(self, depth: int = 0, indent: int = 2):
         result = []

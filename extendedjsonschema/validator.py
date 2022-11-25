@@ -26,8 +26,10 @@ class Validator:
             raise SchemaError(["$schema"], f"Invalid dialect (a version of JSON Schema): {dialect}")
 
     def __call__(self, data: JSON):
-        errors = self._program.run(data)
+        errors = []
+        self._program.run([], data, errors)
         if errors:
+            # TODO: This is very slow code. Need to improve
             e = defaultdict(list)
             for error in errors:
                 e[tuple(error.path)].append({"keyword": error.keyword.name, "value": error.keyword.value})
