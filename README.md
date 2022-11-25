@@ -1,3 +1,3 @@
-# Extended JSON Schema Validator
+# Extended JSON Schema
 
 ## WIP
