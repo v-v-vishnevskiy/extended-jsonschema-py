@@ -4,6 +4,7 @@ from typing import Dict, List, Union
 from extendedjsonschema.schema import Schema
 from extendedjsonschema.errors import SchemaError
 from extendedjsonschema.keyword import Keyword
+from extendedjsonschema.tools import is_equal, non_unique_items
 from extendedjsonschema.utils import JSON, RULE, Error
 
 
@@ -61,28 +62,32 @@ class Type(Keyword):
 
 
 class Enum(Keyword):
-    __slots__ = "_enum_values"
+    __slots__ = "_enum_compiled"
     name = "enum"
 
     def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
         super().__init__(value, schema, path, rules)
-        self._enum_values = set()
+        self._enum_compiled = []
 
     def validate(self):
         if type(self.value) != list:
             raise SchemaError(self.path, "It must be an array")
         elif len(self.value) == 0:
             raise SchemaError(self.path, "It must be an array with at least one element")
-        elif len(self.value) != len(set(self.value)):
+        elif non_unique_items(self.value):
             raise SchemaError(self.path, "It must be an array, where each element is unique")
         # TODO: check intersection of `type` and `enum` values
 
     def program(self, path: List[Union[str, int]], value: JSON, errors: List[Error]):
-        if value not in self._enum_values:
-            errors.append(Error(path, self))
+        value_type = type(value)
+        for enum_type, enum_value in self._enum_compiled:
+            if is_equal(value_type, enum_type, value, enum_value):
+                return
+        errors.append(Error(path, self))
 
     def compile(self) -> Union[None, RULE]:
-        self._enum_values = set(self.value)
+        for item in self.value:
+            self._enum_compiled.append((type(item), item))
         return self.program
 
 
@@ -358,48 +363,13 @@ class UniqueItems(Keyword):
 
     def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
         super().__init__(value, schema, path, rules)
-        self._gen = {list: lambda data: enumerate(data), dict: lambda data: data.items()}
 
     def validate(self):
         if type(self.value) != bool:
             raise SchemaError(self.path, "It must be a boolean")
 
-    def _is_equal(self, t1, t2, data1: Union[list, dict], data2: Union[list, dict]) -> bool:
-        if t1 != t2:
-            return False
-
-        if t1 not in {list, dict}:
-            if data1 != data2:
-                return False
-        else:
-            if t1 == list:
-                if len(data1) != len(data2):
-                    return False
-            else:  # dict
-                if set(data1.keys()) != set(data2.keys()):
-                    return False
-
-            for i, item1 in self._gen[t1](data1):
-                if not self._is_equal(type(item1), type(data2[i]), item1, data2[i]):
-                    return False
-        return True
-
     def program(self, path: List[Union[str, int]], value: List[JSON], errors: List[Error]):
-        non_unique_indexes = set()
-        n = len(value)
-        m = n - 1
-        if n > 1:
-            i = 0
-            while i < m:
-                type_i = type(value[i])
-                j = i + 1
-                while j < n:
-                    if j not in non_unique_indexes:
-                        if self._is_equal(type_i, type(value[j]), value[i], value[j]):
-                            non_unique_indexes.add(j)
-                    j += 1
-                i += 1
-        for i in sorted(non_unique_indexes):
+        for i in sorted(non_unique_items(value)):
             errors.append(Error(path + [i], self))
 
     def compile(self) -> Union[None, RULE]:
