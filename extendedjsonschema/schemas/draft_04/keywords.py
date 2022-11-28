@@ -1,7 +1,6 @@
 import re
-from typing import Dict, List, Union
+from typing import List, Union
 
-from extendedjsonschema.schema import Schema
 from extendedjsonschema.errors import SchemaError
 from extendedjsonschema.keyword import Keyword
 from extendedjsonschema.tools import is_equal, non_unique_items
@@ -10,7 +9,6 @@ from extendedjsonschema.utils import JSON, RULE, Error
 
 # General
 class Type(Keyword):
-    __slots__ = "_compiled_value"
     name = "type"
     valid_types = {
         "array": list,
@@ -21,10 +19,6 @@ class Type(Keyword):
         "object": dict,
         "string": str
     }
-
-    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, schema, path, rules)
-        self._compiled_value = None
 
     def validate(self):
         valid_types = set(self.valid_types.keys())
@@ -45,29 +39,24 @@ class Type(Keyword):
             raise SchemaError(self.path, "The value of this keyword must be either a string or an array of strings")
 
     def program(self, path: List[Union[str, int]], value: JSON, errors: List[Error]):
-        if type(value) != self._compiled_value:
+        if type(value) != self.property["compiled_value"]:
             errors.append(Error(path, self))
 
     def program_list(self, path: List[Union[str, int]], value: JSON, errors: List[Error]):
-        if type(value) not in self._compiled_value:
+        if type(value) not in self.property["compiled_value"]:
             errors.append(Error(path, self))
 
     def compile(self) -> Union[None, RULE]:
         if type(self.value) == str:
-            self._compiled_value = self.valid_types[self.value]
+            self.property["compiled_value"] = self.valid_types[self.value]
             return self.program
         else:
-            self._compiled_value = {self.valid_types[t] for t in self.value}
+            self.property["compiled_value"] = {self.valid_types[t] for t in self.value}
             return self.program_list
 
 
 class Enum(Keyword):
-    __slots__ = "_enum_compiled"
     name = "enum"
-
-    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, schema, path, rules)
-        self._enum_compiled = []
 
     def validate(self):
         if type(self.value) != list:
@@ -79,25 +68,21 @@ class Enum(Keyword):
         # TODO: check intersection of `type` and `enum` values
 
     def program(self, path: List[Union[str, int]], value: JSON, errors: List[Error]):
-        value_type = type(value)
-        for enum_type, enum_value in self._enum_compiled:
-            if is_equal(value_type, enum_type, value, enum_value):
+        for enum_type, enum_value in self.property["enum_compiled"]:
+            if is_equal(type(value), enum_type, value, enum_value):
                 return
         errors.append(Error(path, self))
 
     def compile(self) -> Union[None, RULE]:
+        self.property["enum_compiled"] = []
         for item in self.value:
-            self._enum_compiled.append((type(item), item))
+            self.property["enum_compiled"].append((type(item), item))
         return self.program
 
 
+# schema composition
 class AllOf(Keyword):
-    __slots__ = "_programs"
     name = "allOf"
-
-    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, schema, path, rules)
-        self._programs = []
 
     def validate(self):
         if type(self.value) != list:
@@ -107,29 +92,18 @@ class AllOf(Keyword):
                 raise SchemaError(self.path + [i], "It must be an object")
 
     def program(self, path: List[Union[str, int]], value: JSON, errors: List[Error]):
-        for p in self._programs:
+        for p in self.property["programs"]:
             p.run(path, value, errors)
 
     def compile(self) -> Union[None, RULE]:
+        self.property["programs"] = []
         for item in self.value:
-            self._programs.append(self.schema.compile(item))
+            self.property["programs"].append(self.schema.compile(item))
         return self.program
-
-    def to_string(self, depth: int = 0, indent: int = 2):
-        programs = "\n".join([
-            f"{' ' * (depth + 1) * indent}{i}:\n{p.to_string(depth + 2, indent)}"
-            for i, p in enumerate(self._programs)
-        ])
-        return f"{' ' * depth * indent}{self.name}:\n{programs}"
 
 
 class AnyOf(Keyword):
-    __slots__ = "_programs"
     name = "anyOf"
-
-    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, schema, path, rules)
-        self._programs = []
 
     def validate(self):
         if type(self.value) != list:
@@ -140,7 +114,7 @@ class AnyOf(Keyword):
 
     def program(self, path: List[Union[str, int]], value: JSON, errors: List[Error]):
         errs = []
-        for p in self._programs:
+        for p in self.property["programs"]:
             e = []
             p.run(path, value, e)
             if not e:
@@ -150,25 +124,14 @@ class AnyOf(Keyword):
         errors.extend(errs)
 
     def compile(self) -> Union[None, RULE]:
+        self.property["programs"] = []
         for item in self.value:
-            self._programs.append(self.schema.compile(item))
+            self.property["programs"].append(self.schema.compile(item))
         return self.program
-
-    def to_string(self, depth: int = 0, indent: int = 2):
-        programs = "\n".join([
-            f"{' ' * (depth + 1) * indent}{i}:\n{p.to_string(depth + 2, indent)}"
-            for i, p in enumerate(self._programs)
-        ])
-        return f"{' ' * depth * indent}{self.name}:\n{programs}"
 
 
 class OneOf(Keyword):
-    __slots__ = "_programs"
     name = "oneOf"
-
-    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, schema, path, rules)
-        self._programs = []
 
     def validate(self):
         if type(self.value) != list:
@@ -179,7 +142,7 @@ class OneOf(Keyword):
 
     def program(self, path: List[Union[str, int]], value: JSON, errors: List[Error]):
         n_successes = 0
-        for p in self._programs:
+        for p in self.property["programs"]:
             e = []
             p.run(path, value, e)
             if not e:
@@ -188,49 +151,28 @@ class OneOf(Keyword):
             errors.append(Error(path, self))
 
     def compile(self) -> Union[None, RULE]:
+        self.property["programs"] = []
         for item in self.value:
-            self._programs.append(self.schema.compile(item))
+            self.property["programs"].append(self.schema.compile(item))
         return self.program
 
-    def to_string(self, depth: int = 0, indent: int = 2):
-        programs = "\n".join([
-            f"{' ' * (depth + 1) * indent}{i}:\n{p.to_string(depth + 2, indent)}"
-            for i, p in enumerate(self._programs)
-        ])
-        return f"{' ' * depth * indent}{self.name}:\n{programs}"
 
-
-# schema composition
 class Not(Keyword):
-    __slots__ = "_program"
     name = "not"
-
-    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, schema, path, rules)
-        self._program = None
 
     def validate(self):
         if type(self.value) != dict:
             raise SchemaError(self.path, "It must be an object")
 
     def compile(self) -> Union[None, RULE]:
-        self._program = self.schema.compile(self.value)
-        return self._program.run
-
-    def to_string(self, depth: int = 0, indent: int = 2):
-        return f"{' ' * depth*indent}{self.name}:\n{self._program.to_string(depth + 1, indent)}"
+        self.property["program"] = self.schema.compile(self.value)
+        return self.property["program"].run
 
 
 # Array
 class Items(Keyword):
-    __slots__ = "_program_list", "_program_tuple"
     name = "items"
     type = "array"
-
-    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, schema, path, rules)
-        self._program_list = None
-        self._program_tuple = []
 
     def validate(self):
         if type(self.value) not in {dict, list}:
@@ -242,78 +184,58 @@ class Items(Keyword):
 
     def program_list(self, path: List[Union[str, int]], value: List[JSON], errors: List[Error]):
         for i, item in enumerate(value):
-            self._program_list.run(path + [i], item, errors)
+            self.property["program"].run(path + [i], item, errors)
 
     def program_tuple(self, path: List[Union[str, int]], value: List[JSON], errors: List[Error]):
         i = 0
-        n = min(len(self._program_tuple), len(value))
+        n = min(self.property["n_programs"], len(value))
         while i < n:
-            self._program_tuple[i].run(path + [i], value[i], errors)
+            self.property["programs"][i].run(path + [i], value[i], errors)
             i += 1
 
     def compile(self) -> Union[None, RULE]:
         if type(self.value) == dict:
-            self._program_list = self.schema.compile(self.value)
+            self.property["program"] = self.schema.compile(self.value)
             return self.program_list
         else:
-            self._program_tuple = [self.schema.compile(item) for item in self.value]
+            self.property["programs"] = [self.schema.compile(item) for item in self.value]
+            self.property["n_programs"] = len(self.property["programs"])
             return self.program_tuple
-
-    def to_string(self, depth: int = 0, indent: int = 2):
-        if type(self.value) == dict:
-            return f"{' ' * depth * indent}{self.name}:\n{self._program_list.to_string(depth + 1, indent)}"
-        else:
-            programs = "\n".join([
-                f"{' ' * (depth + 1) * indent}{i}:\n{p.to_string(depth + 2, indent)}"
-                for i, p in enumerate(self._program_tuple)
-            ])
-            return f"{' ' * depth * indent}{self.name}:\n{programs}"
 
 
 class AdditionalItems(Keyword):
-    __slots__ = "_program", "_items_tuple_programs"
     name = "additionalItems"
     type = "array"
-
-    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, schema, path, rules)
-        self._program = None
-        self._items_tuple_programs = 0
 
     def validate(self):
         if type(self.value) not in {bool, dict}:
             raise SchemaError(self.path, "It must be a boolean or an object")
 
     def false_program(self, path: List[Union[str, int]], value: list, errors: List[Error]):
-        if len(value) > self._items_tuple_programs:
-            for i in range(self._items_tuple_programs, len(value)):
+        if len(value) > self.property["items_tuple_programs"]:
+            for i in range(self.property["items_tuple_programs"], len(value)):
                 errors.append(Error(path + [i], self))
 
     def program(self, path: List[Union[str, int]], value: list, errors: List[Error]):
-        if len(value) > self._items_tuple_programs:
-            for i in range(self._items_tuple_programs, len(value)):
-                self._program.run(path + [i], value[i], errors)
+        if len(value) > self.property["items_tuple_programs"]:
+            for i in range(self.property["items_tuple_programs"], len(value)):
+                self.property["program"].run(path + [i], value[i], errors)
 
     def compile(self) -> Union[None, RULE]:
+        self.property["items_tuple_programs"] = 0
         if "items" in self.rules and type(self.rules["items"].value) == list:
-            self._items_tuple_programs = len(self.rules["items"].value)
+            self.property["items_tuple_programs"] = len(self.rules["items"].value)
 
         if self.value is True:
             return None
         elif self.value is False:
             return self.false_program
         else:
-            self._program = self.schema.compile(self.value)
-            if self._program:
+            self.property["program"] = self.schema.compile(self.value)
+            if self.property["program"]:
                 return self.program
             else:
                 return None
-
-    def to_string(self, depth: int = 0, indent: int = 2):
-        if type(self.value) == bool:
-            return super().to_string(depth, indent)
-        else:
-            return f"{' ' * depth * indent}{self.name}:\n{self._program.to_string(depth + 1, indent)}"
 
 
 class MinItems(Keyword):
@@ -357,12 +279,8 @@ class MaxItems(Keyword):
 
 
 class UniqueItems(Keyword):
-    __slots__ = "_gen"
     name = "uniqueItems"
     type = "array"
-
-    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, schema, path, rules)
 
     def validate(self):
         if type(self.value) != bool:
@@ -474,13 +392,8 @@ class ExclusiveMaximum(Keyword):
 
 # Object
 class Properties(Keyword):
-    __slots__ = "_programs"
     name = "properties"
     type = "object"
-
-    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, schema, path, rules)
-        self._programs = {}
 
     def validate(self):
         if type(self.value) != dict:
@@ -495,30 +408,22 @@ class Properties(Keyword):
                     raise SchemaError(self.path + [key], "It must be an object")
 
     def program(self, path: List[Union[str, int]], value: dict, errors: List[Error]):
+        keys = set(self.property["programs"].keys())
         for k, v in value.items():
-            if k not in self._programs:
+            if k not in keys:
                 continue
-            self._programs[k].run(path + [k], v, errors)
+            self.property["programs"][k].run(path + [k], v, errors)
 
     def compile(self) -> Union[None, RULE]:
+        self.property["programs"] = {}
         for k, v in self.value.items():
-            self._programs[k] = self.schema.compile(v, self.path + [k])
+            self.property["programs"][k] = self.schema.compile(v, self.path + [k])
         return self.program
-
-    def to_string(self, depth: int = 0, indent: int = 2):
-        programs = "\n".join(p.to_string(depth + 1, indent) for p in self._programs.values())
-        return f"{' ' * depth*indent}{self.name}:\n{programs}"
 
 
 class PatternProperties(Keyword):
-    __slots__ = "_programs", "_properties"
     name = "patternProperties"
     type = "object"
-
-    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, schema, path, rules)
-        self._programs = {}
-        self._properties = set()
 
     def validate(self):
         if type(self.value) != dict:
@@ -540,38 +445,29 @@ class PatternProperties(Keyword):
 
     def program(self, path: List[Union[str, int]], value: dict, errors: List[Error]):
         for k, v in value.items():
-            if k in self._properties:
+            if k in self.property["properties"]:
                 # we should check this field in the 'properties' keyword, so skip it
                 continue
 
-            for re_prog, prog in self._programs.values():
-                if re_prog(k):
+            for pattern, prog in self.property["programs"].values():
+                if pattern.match(k):
                     prog.run(path + [k], v, errors)
                     break
 
     def compile(self) -> Union[None, RULE]:
+        self.property["programs"] = {}
+        self.property["properties"] = set()
         if "properties" in self.rules:
-            self._properties = set(self.rules.keys())
+            self.property["properties"] = set(self.rules.keys())
         for k, v in self.value.items():
             # TODO: use cache for checking regular expressions
-            self._programs[k] = (re.compile(k).match, self.schema.compile(v, self.path + [k]))
+            self.property["programs"][k] = (re.compile(k), self.schema.compile(v, self.path + [k]))
         return self.program
-
-    def to_string(self, depth: int = 0, indent: int = 2):
-        programs = "\n".join(p[1].to_string(depth + 1, indent) for p in self._programs.values())
-        return f"{' ' * depth*indent}{self.name}:\n{programs}"
 
 
 class AdditionalProperties(Keyword):
-    __slots__ = "_properties", "_program", "_patternProperties"
     name = "additionalProperties"
     type = "object"
-
-    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, schema, path, rules)
-        self._properties = set()
-        self._program = None
-        self._patternProperties = []
 
     def validate(self):
         if type(self.value) not in {bool, dict}:
@@ -579,10 +475,10 @@ class AdditionalProperties(Keyword):
 
     def false_program(self, path: List[Union[str, int]], value: dict, errors: List[Error]):
         for k in value.keys():
-            if k in self._properties:
+            if k in self.property["properties"]:
                 continue
 
-            for pp_prog in self._patternProperties:
+            for pp_prog in self.property["patternProperties"]:
                 # TODO: use cache for checking regular expressions
                 if pp_prog(k):
                     break
@@ -591,47 +487,44 @@ class AdditionalProperties(Keyword):
 
     def program(self, path: List[Union[str, int]], value: dict, errors: List[Error]):
         for k, v in value.items():
-            if k in self._properties:
+            if k in self.property["properties"]:
                 # we should check this field in the 'properties' keyword, so skip it
                 continue
 
             pp_found = False
-            for pp_prog in self._patternProperties:
+            for pattern in self.property["patternProperties"]:
                 # TODO: use cache for checking regular expressions
-                if pp_prog(k):
+                if pattern.match(k):
                     pp_found = True
                     break
             if pp_found:
                 # we should check this field in the 'patternProperties' keyword, so skip it
                 continue
 
-            self._program.run(path + [k], v, errors)
+            self.property["program"].run(path + [k], v, errors)
 
     def compile(self) -> Union[None, RULE]:
+        self.property["properties"] = set()
+        self.property["patternProperties"] = []
+
         if self.value is True:
             return None
         else:
             if "properties" in self.rules:
-                self._properties = set(self.rules["properties"].value.keys())
+                self.property["properties"] = set(self.rules["properties"].value.keys())
 
             if "patternProperties" in self.rules:
                 for regexp_property in self.rules["patternProperties"].value.keys():
-                    self._patternProperties.append(re.compile(regexp_property).match)
+                    self.property["patternProperties"].append(re.compile(regexp_property))
 
             if self.value is False:
                 return self.false_program
             else:
-                self._program = self.schema.compile(self.value)
-                if self._program:
+                self.property["program"] = self.schema.compile(self.value)
+                if self.property["program"]:
                     return self.program
                 else:
                     return None
-
-    def to_string(self, depth: int = 0, indent: int = 2):
-        if type(self.value) == bool:
-            return super().to_string(depth, indent)
-        else:
-            return f"{' ' * depth*indent}{self.name}:\n{self._program.to_string(depth + 1, indent)}"
 
 
 class Required(Keyword):
@@ -746,13 +639,8 @@ class MaxLength(Keyword):
 
 
 class Pattern(Keyword):
-    __slots__ = "_prog"
     name = "pattern"
     type = "string"
-
-    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, schema, path, rules)
-        self._prog = None
 
     def validate(self):
         try:
@@ -761,40 +649,25 @@ class Pattern(Keyword):
             raise SchemaError(self.path, "Invalid regular expression")
 
     def program(self, path: List[Union[str, int]], value: str, errors: List[Error]):
-        if not self._prog.match(value):
+        if not self.property["pattern"].match(value):
             errors.append(Error(path, self))
 
     def compile(self) -> Union[None, RULE]:
-        self._prog = re.compile(self.value)
+        self.property["pattern"] = re.compile(self.value)
         return self.program
 
 
 class Format(Keyword):
     name = "format"
     type = "string"
-    _prog_datetime = re.compile(r"^\d{4}-[01]\d-[0-3]\d(t|T)[0-2]\d:[0-5]\d:[0-5]\d(?:\.\d+)?(?:[+-][0-2]\d:[0-5]\d|[+-][0-2]\d[0-5]\d|z|Z)\Z")
-    _prog_bad_email_name = re.compile(r"(^[^a-zA-Z0-9]){1}|([^a-zA-Z0-9._+-])+|([._\-+]{2,})|([^a-zA-Z0-9]$){1}")
-    _prog_bad_email_domain = re.compile(r"(^[^a-zA-Z0-9]){1}|([^a-zA-Z0-9.-]+)|([.-]{2,})|([a-zA-Z0-9-]){65,}|([^a-zA-Z0-9.]$){1}")
-    _prog_bad_hostname = re.compile(r"(^[^a-zA-Z0-9]){1}|([^a-zA-Z0-9.-]+)|([.-]{2,})|([a-zA-Z0-9-]){65,}|([^a-zA-Z0-9.]$){1}")
-    _prog_bad_uri_scheme = re.compile(r"(^[^a-zA-Z]){1}|([^a-zA-Z0-9.+-])+")
-
-    def __init__(self, value: JSON, schema: Schema, path: List[Union[str, int]], rules: Dict[str, Keyword]):
-        super().__init__(value, schema, path, rules)
-        self.valid_formats = {
-            "date-time": self._datetime_program,
-            "email": self._email_program,
-            "hostname": self._hostname_program,
-            "ipv4": self._ipv4_program,
-            "ipv6": self._ipv6_program,
-            "uri": self._uri_program
-        }
+    valid_formats = {"date-time", "email", "hostname", "ipv4", "ipv6", "uri"}
 
     def validate(self):
         if self.value not in self.valid_formats:
             raise SchemaError(self.path, f"Invalid format: {self.value}")
 
     def _datetime_program(self, path: List[Union[str, int]], value: str, errors: List[Error]):
-        if not self._prog_datetime.match(value):
+        if not self.property["datetime"].match(value):
             errors.append(Error(path, self))
 
     def _email_program(self, path: List[Union[str, int]], value: str, errors: List[Error]):
@@ -804,11 +677,11 @@ class Format(Keyword):
             errors.append(Error(path, self))
             return
 
-        if not name or not domain or self._prog_bad_email_name.match(name) or self._prog_bad_email_domain.match(domain):
+        if not name or not domain or self.property["bad_email_name"].match(name) or self.property["bad_email_domain"].match(domain):
             errors.append(Error(path, self))
 
     def _hostname_program(self, path: List[Union[str, int]], value: str, errors: List[Error]):
-        if not value or self._prog_bad_hostname.match(value):
+        if not value or self.property["bad_hostname"].match(value):
             errors.append(Error(path, self))
 
     def _ipv4_program(self, path: List[Union[str, int]], value: str, errors: List[Error]):
@@ -856,7 +729,7 @@ class Format(Keyword):
             errors.append(Error(path, self))
             return
 
-        if not scheme or not hier_part or self._prog_bad_uri_scheme.match(scheme):
+        if not scheme or not hier_part or self.property["bad_uri_scheme"].match(scheme):
             errors.append(Error(path, self))
             return
 
@@ -865,4 +738,22 @@ class Format(Keyword):
             pass
 
     def compile(self) -> Union[None, RULE]:
-        return self.valid_formats[self.value]
+        if self.value == "date-time":
+            self.property["datetime"] = re.compile(r"^\d{4}-[01]\d-[0-3]\d(t|T)[0-2]\d:[0-5]\d:[0-5]\d(?:\.\d+)?(?:[+-][0-2]\d:[0-5]\d|[+-][0-2]\d[0-5]\d|z|Z)\Z")
+            return self._datetime_program
+        elif self.value == "email":
+            self.property["bad_email_name"] = re.compile(r"(^[^a-zA-Z0-9]){1}|([^a-zA-Z0-9._+-])+|([._\-+]{2,})|([^a-zA-Z0-9]$){1}")
+            self.property["bad_email_domain"] = re.compile(r"(^[^a-zA-Z0-9]){1}|([^a-zA-Z0-9.-]+)|([.-]{2,})|([a-zA-Z0-9-]){65,}|([^a-zA-Z0-9.]$){1}")
+            return self._email_program
+        elif self.value == "hostname":
+            self.property["bad_hostname"] = re.compile(r"(^[^a-zA-Z0-9]){1}|([^a-zA-Z0-9.-]+)|([.-]{2,})|([a-zA-Z0-9-]){65,}|([^a-zA-Z0-9.]$){1}")
+            return self._hostname_program
+        elif self.value == "ipv4":
+            return self._ipv4_program
+        elif self.value == "ipv6":
+            return self._ipv6_program
+        elif self.value == "uri":
+            self.property["bad_uri_scheme"] = re.compile(r"(^[^a-zA-Z]){1}|([^a-zA-Z0-9.+-])+")
+            return self._uri_program
+        else:
+            SchemaError(self.path, f"Invalid format: {self.value}")

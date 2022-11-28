@@ -1,11 +1,11 @@
-from typing import Dict, List, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
 from extendedjsonschema.schema import Schema
 from extendedjsonschema.utils import JSON, RULE
 
 
 class Keyword:
-    __slots__ = "value", "schema", "path", "rules"
+    __slots__ = "value", "schema", "path", "rules", "property"
     name: str = None
     type: Union[str, Tuple[str, ...]] = None
 
@@ -14,6 +14,7 @@ class Keyword:
         self.schema = schema
         self.path = path
         self.rules = rules
+        self.property: Dict[str, Any] = {}
 
     def validate(self) -> None:
         raise NotImplementedError("Please implement this method")
@@ -21,8 +22,5 @@ class Keyword:
     def compile(self) -> Union[None, RULE]:
         raise NotImplementedError("Please implement this method")
 
-    def to_string(self, depth: int = 0, indent: int = 2):
-        return f"{' ' * depth*indent}{self.name}: {self.value}"
-
     def __repr__(self):
-        return self.to_string()
+        return f"{self.name}: {self.value}"
