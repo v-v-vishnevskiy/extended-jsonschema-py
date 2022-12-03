@@ -1,7 +1,7 @@
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Tuple
 
-from extendedjsonschema.keyword import Error, Keyword
-from extendedjsonschema.utils import JSON, RULE
+from extendedjsonschema.keyword import Keyword
+from extendedjsonschema.utils import ERRORS, JSON, PATH, RULE
 
 
 class Program:
@@ -15,6 +15,6 @@ class Program:
     def __bool__(self) -> bool:
         return self._has_programs
 
-    def __call__(self, path: List[Union[str, int]], data: JSON, errors: List[Error]):
-        for fn, keyword in self._general + self._type_specific.get(type(data), []):
-            fn(path, data, errors)
+    def __call__(self, path: PATH, value: JSON, errors: ERRORS):
+        for fn, keyword in self._general + self._type_specific.get(type(value), []):
+            fn(path, value, errors)

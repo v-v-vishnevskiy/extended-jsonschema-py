@@ -3,7 +3,7 @@ import inspect
 import re
 from collections.abc import Iterable
 from collections import defaultdict
-from typing import Any, Callable, Dict, List, Tuple, Union
+from typing import Any, Callable, List, Tuple, Union
 
 from extendedjsonschema.errors import CompilerError
 from extendedjsonschema.keyword import Keyword
@@ -13,7 +13,6 @@ from extendedjsonschema.schema import Program
 BEFORE_FUNCTION_CODE = """import re
 from collections import defaultdict
 from extendedjsonschema.errors import ValidationError
-from extendedjsonschema.keyword import Error
 from extendedjsonschema.tools import is_equal
 
 
@@ -98,7 +97,7 @@ class Compiler:
         elif isinstance(value, Program):
             return f"program_{id(value)}"
         elif isinstance(value, Keyword):
-            return self.to_python_code({"keyword": value.name, "value": value.value})
+            return self.to_python_code({"name": value.name, "value": value.value})
         elif isinstance(value, re.Pattern):
             return str(value)
         else:

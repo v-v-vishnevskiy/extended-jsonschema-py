@@ -1,8 +1,7 @@
-from typing import List, Union
-
 from extendedjsonschema.program import Program
+from extendedjsonschema.utils import PATH
 
 
 class Schema:
-    def compile(self, schema: dict, path: List[Union[str, int]] = None) -> Program:
+    def compile(self, schema: dict, path: PATH = None) -> Program:
         raise NotImplementedError("Please implement this method")

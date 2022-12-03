@@ -1,13 +1,6 @@
-from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Union
 
 from extendedjsonschema.utils import JSON, RULE
-
-
-@dataclass
-class Error:
-    path: List[Union[str, int]]
-    keyword: "Keyword"
 
 
 class Keyword:

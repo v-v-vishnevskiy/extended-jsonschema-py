@@ -2,9 +2,9 @@ import re
 from typing import List, Union
 
 from extendedjsonschema.errors import SchemaError
-from extendedjsonschema.keyword import Error, Keyword
+from extendedjsonschema.keyword import Keyword
 from extendedjsonschema.tools import is_equal, non_unique_items
-from extendedjsonschema.utils import JSON, RULE
+from extendedjsonschema.utils import ERRORS, JSON, PATH, RULE
 
 
 # General
@@ -38,13 +38,13 @@ class Type(Keyword):
         else:
             raise SchemaError(self.path, "The value of this keyword must be either a string or an array of strings")
 
-    def program(self, path: List[Union[str, int]], value: JSON, errors: List[Error]):
+    def program(self, path: PATH, value: JSON, errors: ERRORS):
         if type(value) != self.property["compiled_value"]:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
-    def program_list(self, path: List[Union[str, int]], value: JSON, errors: List[Error]):
+    def program_list(self, path: PATH, value: JSON, errors: ERRORS):
         if type(value) not in self.property["compiled_value"]:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         if type(self.value) == str:
@@ -71,11 +71,11 @@ class Enum(Keyword):
             raise SchemaError(self.path, "It must be an array, where each element is unique")
         # TODO: check intersection of `type` and `enum` values
 
-    def program(self, path: List[Union[str, int]], value: JSON, errors: List[Error]):
+    def program(self, path: PATH, value: JSON, errors: ERRORS):
         for enum_type, enum_value in self.property["enum_compiled"]:
             if is_equal(type(value), enum_type, value, enum_value):
                 return
-        errors.append(Error(path, self))
+        errors.append({"path": path, "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         self.property["enum_compiled"] = []
@@ -95,7 +95,7 @@ class AllOf(Keyword):
             if type(item) != dict:
                 raise SchemaError(self.path + [i], "It must be an object")
 
-    def program(self, path: List[Union[str, int]], value: JSON, errors: List[Error]):
+    def program(self, path: PATH, value: JSON, errors: ERRORS):
         for p in self.property["programs"]:
             p(path, value, errors)
 
@@ -116,7 +116,7 @@ class AnyOf(Keyword):
             if type(item) != dict:
                 raise SchemaError(self.path + [i], "It must be an object")
 
-    def program(self, path: List[Union[str, int]], value: JSON, errors: List[Error]):
+    def program(self, path: PATH, value: JSON, errors: ERRORS):
         errs = []
         for p in self.property["programs"]:
             e = []
@@ -144,7 +144,7 @@ class OneOf(Keyword):
             if type(item) != dict:
                 raise SchemaError(self.path + [i], "It must be an object")
 
-    def program(self, path: List[Union[str, int]], value: JSON, errors: List[Error]):
+    def program(self, path: PATH, value: JSON, errors: ERRORS):
         n_successes = 0
         for p in self.property["programs"]:
             e = []
@@ -152,7 +152,7 @@ class OneOf(Keyword):
             if not e:
                 n_successes += 1
         if n_successes != 1:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         self.property["programs"] = []
@@ -168,11 +168,11 @@ class Not(Keyword):
         if type(self.value) != dict:
             raise SchemaError(self.path, "It must be an object")
 
-    def program(self, path: List[Union[str, int]], value: JSON, errors: List[Error]):
+    def program(self, path: PATH, value: JSON, errors: ERRORS):
         errs = []
         self.property["program"](path, value, errs)
         if not errs:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         self.property["program"] = self.schema.compile(self.value)
@@ -192,11 +192,11 @@ class Items(Keyword):
                 if type(item) != dict:
                     raise SchemaError(self.path + [i], "It must be an object")
 
-    def program_list(self, path: List[Union[str, int]], value: List[JSON], errors: List[Error]):
+    def program_list(self, path: PATH, value: List[JSON], errors: ERRORS):
         for i, item in enumerate(value):
             self.property["program"](path + [i], item, errors)
 
-    def program_tuple(self, path: List[Union[str, int]], value: List[JSON], errors: List[Error]):
+    def program_tuple(self, path: PATH, value: List[JSON], errors: ERRORS):
         i = 0
         n = min(self.property["n_programs"], len(value))
         while i < n:
@@ -221,12 +221,12 @@ class AdditionalItems(Keyword):
         if type(self.value) not in {bool, dict}:
             raise SchemaError(self.path, "It must be a boolean or an object")
 
-    def false_program(self, path: List[Union[str, int]], value: list, errors: List[Error]):
+    def false_program(self, path: PATH, value: list, errors: ERRORS):
         if len(value) > self.property["items_tuple_programs"]:
             for i in range(self.property["items_tuple_programs"], len(value)):
-                errors.append(Error(path + [i], self))
+                errors.append({"path": path + [i], "keyword": self})
 
-    def program(self, path: List[Union[str, int]], value: list, errors: List[Error]):
+    def program(self, path: PATH, value: list, errors: ERRORS):
         if len(value) > self.property["items_tuple_programs"]:
             for i in range(self.property["items_tuple_programs"], len(value)):
                 self.property["program"](path + [i], value[i], errors)
@@ -258,9 +258,9 @@ class MinItems(Keyword):
         elif self.value < 0:
             raise SchemaError(self.path, "It must be a non-negative integer")
 
-    def program(self, path: List[Union[str, int]], value: str, errors: List[Error]):
+    def program(self, path: PATH, value: str, errors: ERRORS):
         if len(value) < self.value:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         return self.program
@@ -280,9 +280,9 @@ class MaxItems(Keyword):
             if self.value < self.rules["minItems"].value:
                 raise SchemaError(self.path, "It must be greater or equal to `minItems`")
 
-    def program(self, path: List[Union[str, int]], value: str, errors: List[Error]):
+    def program(self, path: PATH, value: str, errors: ERRORS):
         if len(value) > self.value:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         return self.program
@@ -296,9 +296,9 @@ class UniqueItems(Keyword):
         if type(self.value) != bool:
             raise SchemaError(self.path, "It must be a boolean")
 
-    def program(self, path: List[Union[str, int]], value: List[JSON], errors: List[Error]):
+    def program(self, path: PATH, value: List[JSON], errors: ERRORS):
         for i in sorted(non_unique_items(value)):
-            errors.append(Error(path + [i], self))
+            errors.append({"path": path + [i], "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         if self.value:
@@ -318,9 +318,9 @@ class MultipleOf(Keyword):
         elif self.value < 0:
             raise SchemaError(self.path, "It must be strictly greater than 0")
 
-    def program(self, path: List[Union[str, int]], value: Union[int, float], errors: List[Error]):
+    def program(self, path: PATH, value: Union[int, float], errors: ERRORS):
         if value % self.value != 0:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         return self.program
@@ -334,13 +334,13 @@ class Minimum(Keyword):
         if type(self.value) not in {int, float}:
             raise SchemaError(self.path, "It must be an integer or a number")
 
-    def program_strict(self, path: List[Union[str, int]], value: Union[int, float], errors: List[Error]):
+    def program_strict(self, path: PATH, value: Union[int, float], errors: ERRORS):
         if value <= self.value:
-            return errors.append(Error(path, self))
+            return errors.append({"path": path, "keyword": self})
 
-    def program(self, path: List[Union[str, int]], value: Union[int, float], errors: List[Error]):
+    def program(self, path: PATH, value: Union[int, float], errors: ERRORS):
         if value < self.value:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         if "exclusiveMinimum" in self.rules and self.rules["exclusiveMinimum"].value is True:
@@ -361,13 +361,13 @@ class Maximum(Keyword):
             if self.value < self.rules["minimum"].value:
                 raise SchemaError(self.path, "It must be greater or equal to `minimum`")
 
-    def program_strict(self, path: List[Union[str, int]], value: Union[int, float], errors: List[Error]):
+    def program_strict(self, path: PATH, value: Union[int, float], errors: ERRORS):
         if value >= self.value:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
-    def program(self, path: List[Union[str, int]], value: Union[int, float], errors: List[Error]):
+    def program(self, path: PATH, value: Union[int, float], errors: ERRORS):
         if value > self.value:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         if "exclusiveMaximum" in self.rules and self.rules["exclusiveMaximum"].value is True:
@@ -417,7 +417,7 @@ class Properties(Keyword):
                 if type(value) != dict:
                     raise SchemaError(self.path + [key], "It must be an object")
 
-    def program(self, path: List[Union[str, int]], value: dict, errors: List[Error]):
+    def program(self, path: PATH, value: dict, errors: ERRORS):
         keys = set(self.property["programs"].keys())
         for k, v in value.items():
             if k not in keys:
@@ -453,7 +453,7 @@ class PatternProperties(Keyword):
             except re.error:
                 raise SchemaError(self.path, "It must be an object, where each key is a valid regular expression")
 
-    def program(self, path: List[Union[str, int]], value: dict, errors: List[Error]):
+    def program(self, path: PATH, value: dict, errors: ERRORS):
         for k, v in value.items():
             if k in self.property["properties"]:
                 # we should check this field in the 'properties' keyword, so skip it
@@ -483,7 +483,7 @@ class AdditionalProperties(Keyword):
         if type(self.value) not in {bool, dict}:
             raise SchemaError(self.path, "It must be a boolean or an object")
 
-    def false_program(self, path: List[Union[str, int]], value: dict, errors: List[Error]):
+    def false_program(self, path: PATH, value: dict, errors: ERRORS):
         for k in value.keys():
             if k in self.property["properties"]:
                 continue
@@ -493,9 +493,9 @@ class AdditionalProperties(Keyword):
                 if pp_prog(k):
                     break
             else:
-                errors.append(Error(path + [k], self))
+                errors.append({"path": path + [k], "keyword": self})
 
-    def program(self, path: List[Union[str, int]], value: dict, errors: List[Error]):
+    def program(self, path: PATH, value: dict, errors: ERRORS):
         for k, v in value.items():
             if k in self.property["properties"]:
                 # we should check this field in the 'properties' keyword, so skip it
@@ -549,10 +549,10 @@ class Required(Keyword):
         elif len(self.value) != len(set(self.value)):
             raise SchemaError(self.path, "It must be an array of strings, where each element is unique")
 
-    def program(self, path: List[Union[str, int]], value: dict, errors: List[Error]):
+    def program(self, path: PATH, value: dict, errors: ERRORS):
         for field in self.value:
             if field not in value:
-                errors.append(Error(path + [field], self))
+                errors.append({"path": path + [field], "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         if self.value:
@@ -571,9 +571,9 @@ class MinProperties(Keyword):
         elif self.value < 0:
             raise SchemaError(self.path, "It must be a non-negative integer")
 
-    def program(self, path: List[Union[str, int]], value: dict, errors: List[Error]):
+    def program(self, path: PATH, value: dict, errors: ERRORS):
         if len(value.keys()) < self.value:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         if self.value == 0:
@@ -596,9 +596,9 @@ class MaxProperties(Keyword):
             if self.value < self.rules["minProperties"].value:
                 raise SchemaError(self.path, "It must be greater or equal to `minProperties`")
 
-    def program(self, path: List[Union[str, int]], value: dict, errors: List[Error]):
+    def program(self, path: PATH, value: dict, errors: ERRORS):
         if len(value.keys()) > self.value:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         return self.program
@@ -615,9 +615,9 @@ class MinLength(Keyword):
         elif self.value < 0:
             raise SchemaError(self.path, "It must be a non-negative integer")
 
-    def program(self, path: List[Union[str, int]], value: str, errors: List[Error]):
+    def program(self, path: PATH, value: str, errors: ERRORS):
         if len(value) < self.value:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         if self.value == 0:
@@ -640,9 +640,9 @@ class MaxLength(Keyword):
             if self.value < self.rules["minLength"].value:
                 raise SchemaError(self.path, "It must be greater or equal to `minLength`")
 
-    def program(self, path: List[Union[str, int]], value: str, errors: List[Error]):
+    def program(self, path: PATH, value: str, errors: ERRORS):
         if len(value) > self.value:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         return self.program
@@ -658,9 +658,9 @@ class Pattern(Keyword):
         except re.error:
             raise SchemaError(self.path, "Invalid regular expression")
 
-    def program(self, path: List[Union[str, int]], value: str, errors: List[Error]):
+    def program(self, path: PATH, value: str, errors: ERRORS):
         if not self.property["pattern"].match(value):
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         self.property["pattern"] = re.compile(self.value)
@@ -676,44 +676,44 @@ class Format(Keyword):
         if self.value not in self.valid_formats:
             raise SchemaError(self.path, f"Invalid format: {self.value}")
 
-    def _datetime_program(self, path: List[Union[str, int]], value: str, errors: List[Error]):
+    def _datetime_program(self, path: PATH, value: str, errors: ERRORS):
         if not self.property["datetime"].match(value):
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
-    def _email_program(self, path: List[Union[str, int]], value: str, errors: List[Error]):
+    def _email_program(self, path: PATH, value: str, errors: ERRORS):
         try:
             name, domain = value.split("@", 1)
         except ValueError:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
             return
 
         if not name or not domain or self.property["bad_email_name"].match(name) or self.property["bad_email_domain"].match(domain):
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
-    def _hostname_program(self, path: List[Union[str, int]], value: str, errors: List[Error]):
+    def _hostname_program(self, path: PATH, value: str, errors: ERRORS):
         if not value or self.property["bad_hostname"].match(value):
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
-    def _ipv4_program(self, path: List[Union[str, int]], value: str, errors: List[Error]):
+    def _ipv4_program(self, path: PATH, value: str, errors: ERRORS):
         parts = value.split(".")
 
         if len(parts) != 4:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
             return
 
         for part in parts:
             try:
                 if (part[0] == "0" and len(part) > 1) or not (-1 < int(part) < 256):
-                    errors.append(Error(path, self))
+                    errors.append({"path": path, "keyword": self})
                     return
             except ValueError:
-                errors.append(Error(path, self))
+                errors.append({"path": path, "keyword": self})
 
-    def _ipv6_program(self, path: List[Union[str, int]], value: str, errors: List[Error]):
+    def _ipv6_program(self, path: PATH, value: str, errors: ERRORS):
         parts = value.split(":")
 
         if len(parts) > 8:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
             return
 
         empty_parts = 0
@@ -723,24 +723,24 @@ class Format(Keyword):
                 continue
             try:
                 if (len(part) > 1 and part[0] == "0") or not (-1 < int(part, 16) < 65536):
-                    errors.append(Error(path, self))
+                    errors.append({"path": path, "keyword": self})
                     return
             except ValueError:
-                errors.append(Error(path, self))
+                errors.append({"path": path, "keyword": self})
                 return
 
         if empty_parts > 3 or empty_parts > 1 and len(parts) > 4:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
 
-    def _uri_program(self, path: List[Union[str, int]], value: str, errors: List[Error]):
+    def _uri_program(self, path: PATH, value: str, errors: ERRORS):
         try:
             scheme, hier_part = value.split(":", 1)
         except ValueError:
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
             return
 
         if not scheme or not hier_part or self.property["bad_uri_scheme"].match(scheme):
-            errors.append(Error(path, self))
+            errors.append({"path": path, "keyword": self})
             return
 
         # Authority part

@@ -1,8 +1,8 @@
-from typing import List
+from extendedjsonschema.utils import PATH
 
 
 class SchemaError(Exception):
-    def __init__(self, path: List[str], msg: str):
+    def __init__(self, path: PATH, msg: str):
         super().__init__(f"'{'.'.join(str(p) for p in path)}' - {str(msg)}")
         self.msg = msg
         self.path = path
