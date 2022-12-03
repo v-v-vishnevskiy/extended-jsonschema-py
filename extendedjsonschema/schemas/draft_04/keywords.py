@@ -2,9 +2,9 @@ import re
 from typing import List, Union
 
 from extendedjsonschema.errors import SchemaError
-from extendedjsonschema.keyword import Keyword
+from extendedjsonschema.keyword import Error, Keyword
 from extendedjsonschema.tools import is_equal, non_unique_items
-from extendedjsonschema.utils import JSON, RULE, Error
+from extendedjsonschema.utils import JSON, RULE
 
 
 # General
@@ -51,8 +51,12 @@ class Type(Keyword):
             self.property["compiled_value"] = self.valid_types[self.value]
             return self.program
         else:
-            self.property["compiled_value"] = {self.valid_types[t] for t in self.value}
-            return self.program_list
+            if len(self.value) == 1:
+                self.property["compiled_value"] = self.valid_types[self.value[0]]
+                return self.program
+            else:
+                self.property["compiled_value"] = {self.valid_types[t] for t in self.value}
+                return self.program_list
 
 
 class Enum(Keyword):
@@ -93,7 +97,7 @@ class AllOf(Keyword):
 
     def program(self, path: List[Union[str, int]], value: JSON, errors: List[Error]):
         for p in self.property["programs"]:
-            p.run(path, value, errors)
+            p(path, value, errors)
 
     def compile(self) -> Union[None, RULE]:
         self.property["programs"] = []
@@ -116,7 +120,7 @@ class AnyOf(Keyword):
         errs = []
         for p in self.property["programs"]:
             e = []
-            p.run(path, value, e)
+            p(path, value, e)
             if not e:
                 return
             else:
@@ -144,7 +148,7 @@ class OneOf(Keyword):
         n_successes = 0
         for p in self.property["programs"]:
             e = []
-            p.run(path, value, e)
+            p(path, value, e)
             if not e:
                 n_successes += 1
         if n_successes != 1:
@@ -164,9 +168,15 @@ class Not(Keyword):
         if type(self.value) != dict:
             raise SchemaError(self.path, "It must be an object")
 
+    def program(self, path: List[Union[str, int]], value: JSON, errors: List[Error]):
+        errs = []
+        self.property["program"](path, value, errs)
+        if not errs:
+            errors.append(Error(path, self))
+
     def compile(self) -> Union[None, RULE]:
         self.property["program"] = self.schema.compile(self.value)
-        return self.property["program"].run
+        return self.program
 
 
 # Array
@@ -184,13 +194,13 @@ class Items(Keyword):
 
     def program_list(self, path: List[Union[str, int]], value: List[JSON], errors: List[Error]):
         for i, item in enumerate(value):
-            self.property["program"].run(path + [i], item, errors)
+            self.property["program"](path + [i], item, errors)
 
     def program_tuple(self, path: List[Union[str, int]], value: List[JSON], errors: List[Error]):
         i = 0
         n = min(self.property["n_programs"], len(value))
         while i < n:
-            self.property["programs"][i].run(path + [i], value[i], errors)
+            self.property["programs"][i](path + [i], value[i], errors)
             i += 1
 
     def compile(self) -> Union[None, RULE]:
@@ -219,7 +229,7 @@ class AdditionalItems(Keyword):
     def program(self, path: List[Union[str, int]], value: list, errors: List[Error]):
         if len(value) > self.property["items_tuple_programs"]:
             for i in range(self.property["items_tuple_programs"], len(value)):
-                self.property["program"].run(path + [i], value[i], errors)
+                self.property["program"](path + [i], value[i], errors)
 
     def compile(self) -> Union[None, RULE]:
         self.property["items_tuple_programs"] = 0
@@ -412,7 +422,7 @@ class Properties(Keyword):
         for k, v in value.items():
             if k not in keys:
                 continue
-            self.property["programs"][k].run(path + [k], v, errors)
+            self.property["programs"][k](path + [k], v, errors)
 
     def compile(self) -> Union[None, RULE]:
         self.property["programs"] = {}
@@ -451,7 +461,7 @@ class PatternProperties(Keyword):
 
             for pattern, prog in self.property["programs"].values():
                 if pattern.match(k):
-                    prog.run(path + [k], v, errors)
+                    prog(path + [k], v, errors)
                     break
 
     def compile(self) -> Union[None, RULE]:
@@ -501,7 +511,7 @@ class AdditionalProperties(Keyword):
                 # we should check this field in the 'patternProperties' keyword, so skip it
                 continue
 
-            self.property["program"].run(path + [k], v, errors)
+            self.property["program"](path + [k], v, errors)
 
     def compile(self) -> Union[None, RULE]:
         self.property["properties"] = set()

@@ -1,13 +1,6 @@
-from dataclasses import dataclass
-from typing import Callable, List, Union
+from typing import Callable, Union
 
 JSON = Union[bool, int, float, str, list, dict, None]
-
-
-@dataclass
-class Error:
-    path: List[Union[str, int]]
-    keyword: "Keyword"
 
 
 RULE = Callable[[JSON], None]

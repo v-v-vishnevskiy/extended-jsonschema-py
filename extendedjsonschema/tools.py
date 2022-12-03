@@ -1,10 +1,10 @@
-from typing import Union
+from typing import Any
 
 
 gen = {list: lambda data: enumerate(data), dict: lambda data: data.items()}
 
 
-def is_equal(t1, t2, data1: Union[list, dict], data2: Union[list, dict]) -> bool:
+def is_equal(t1, t2, data1: Any, data2: Any) -> bool:
     if t1 != t2:
         return False
 

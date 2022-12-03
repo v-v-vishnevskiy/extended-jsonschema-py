@@ -11,6 +11,10 @@ class SchemaError(Exception):
         return f"'{'.'.join(str(p) for p in self.path)}' - {str(self.msg)}"
 
 
+class CompilerError(Exception):
+    pass
+
+
 class ValidationError(Exception):
     def __init__(self, errors):
         """
