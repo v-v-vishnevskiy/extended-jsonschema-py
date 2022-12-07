@@ -74,8 +74,9 @@ class Enum(Keyword):
     def program(self, path: PATH, value: JSON, errors: ERRORS):
         for enum_type, enum_value in self.property["enum_compiled"]:
             if is_equal(type(value), enum_type, value, enum_value):
-                return
-        errors.append({"path": path, "keyword": self})
+                break
+        else:
+            errors.append({"path": path, "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         self.property["enum_compiled"] = []
@@ -117,15 +118,13 @@ class AnyOf(Keyword):
                 raise SchemaError(self.path + [i], "It must be an object")
 
     def program(self, path: PATH, value: JSON, errors: ERRORS):
-        errs = []
         for p in self.property["programs"]:
             e = []
             p(path, value, e)
             if not e:
-                return
-            else:
-                errs.extend(e)
-        errors.extend(errs)
+                break
+        else:
+            errors.append({"path": path, "keyword": self})
 
     def compile(self) -> Union[None, RULE]:
         self.property["programs"] = []
@@ -151,6 +150,8 @@ class OneOf(Keyword):
             p(path, value, e)
             if not e:
                 n_successes += 1
+                if n_successes > 1:
+                    break
         if n_successes != 1:
             errors.append({"path": path, "keyword": self})
 
@@ -197,11 +198,8 @@ class Items(Keyword):
             self.property["program"](path + [i], item, errors)
 
     def program_tuple(self, path: PATH, value: List[JSON], errors: ERRORS):
-        i = 0
-        n = min(self.property["n_programs"], len(value))
-        while i < n:
+        for i in range(min(self.property["n_programs"], len(value))):
             self.property["programs"][i](path + [i], value[i], errors)
-            i += 1
 
     def compile(self) -> Union[None, RULE]:
         if type(self.value) == dict:
@@ -233,8 +231,11 @@ class AdditionalItems(Keyword):
 
     def compile(self) -> Union[None, RULE]:
         self.property["items_tuple_programs"] = 0
-        if "items" in self.rules and type(self.rules["items"].value) == list:
-            self.property["items_tuple_programs"] = len(self.rules["items"].value)
+        if "items" in self.rules:
+            if type(self.rules["items"].value) == dict:
+                return None
+            elif type(self.rules["items"].value) == list:
+                self.property["items_tuple_programs"] = len(self.rules["items"].value)
 
         if self.value is True:
             return None
@@ -402,6 +403,7 @@ class ExclusiveMaximum(Keyword):
 
 # Object
 class Properties(Keyword):
+    # TODO: move `patternProperties` and `additionalProperties` here for speedy code
     name = "properties"
     type = "object"
 
@@ -414,15 +416,13 @@ class Properties(Keyword):
             raise SchemaError(self.path, "It must be an object, where each key is a non-empty string")
         else:
             for key, value in self.value.items():
-                if type(value) != dict:
-                    raise SchemaError(self.path + [key], "It must be an object")
+                if not self.schema.is_schema(value):
+                    raise SchemaError(self.path + [key], "It must be a JSON Schema object")
 
     def program(self, path: PATH, value: dict, errors: ERRORS):
-        keys = set(self.property["programs"].keys())
-        for k, v in value.items():
-            if k not in keys:
-                continue
-            self.property["programs"][k](path + [k], v, errors)
+        for prop, p in self.property["programs"].items():
+            if prop in value:
+                p(path + [prop], value[prop], errors)
 
     def compile(self) -> Union[None, RULE]:
         self.property["programs"] = {}
@@ -446,33 +446,36 @@ class PatternProperties(Keyword):
             raise SchemaError(self.path, "It must be an object, where each key is a non-empty string")
 
         for key, value in self.value.items():
-            if type(value) != dict:
-                raise SchemaError(self.path + [key], "It must be an object")
+            if not self.schema.is_schema(value):
+                raise SchemaError(self.path + [key], "It must be a JSON Schema object")
             try:
                 re.compile(key)
             except re.error:
                 raise SchemaError(self.path, "It must be an object, where each key is a valid regular expression")
 
     def program(self, path: PATH, value: dict, errors: ERRORS):
-        for k, v in value.items():
-            if k in self.property["properties"]:
-                # we should check this field in the 'properties' keyword, so skip it
-                continue
+        for pattern, prog in self.property["programs"]:
+            for field_name, field_value in value.items():
+                if pattern.match(field_name):
+                    prog(path + [field_name], field_value, errors)
 
-            for pattern, prog in self.property["programs"].values():
-                if pattern.match(k):
-                    prog(path + [k], v, errors)
-                    break
+    def program_with_properties(self, path: PATH, value: dict, errors: ERRORS):
+        for pattern, prog in self.property["programs"]:
+            for field_name, field_value in value.items():
+                if field_name not in self.property["properties"] and pattern.match(field_name):
+                    prog(path + [field_name], field_value, errors)
 
     def compile(self) -> Union[None, RULE]:
         self.property["programs"] = {}
         self.property["properties"] = set()
         if "properties" in self.rules:
-            self.property["properties"] = set(self.rules.keys())
+            self.property["properties"] = set(self.rules["properties"].value.keys())
         for k, v in self.value.items():
-            # TODO: use cache for checking regular expressions
-            self.property["programs"][k] = (re.compile(k), self.schema.compile(v, self.path + [k]))
-        return self.program
+            self.property["programs"].append((re.compile(k), self.schema.compile(v, self.path + [k])))
+        if self.property["properties"]:
+            return self.program_with_properties
+        else:
+            return self.program
 
 
 class AdditionalProperties(Keyword):
@@ -481,7 +484,7 @@ class AdditionalProperties(Keyword):
 
     def validate(self):
         if type(self.value) not in {bool, dict}:
-            raise SchemaError(self.path, "It must be a boolean or an object")
+            raise SchemaError(self.path, "It must be a boolean or a JSON Schema object")
 
     def false_program(self, path: PATH, value: dict, errors: ERRORS):
         for k in value.keys():
@@ -497,21 +500,29 @@ class AdditionalProperties(Keyword):
 
     def program(self, path: PATH, value: dict, errors: ERRORS):
         for k, v in value.items():
-            if k in self.property["properties"]:
-                # we should check this field in the 'properties' keyword, so skip it
-                continue
-
-            pp_found = False
-            for pattern in self.property["patternProperties"]:
-                # TODO: use cache for checking regular expressions
-                if pattern.match(k):
-                    pp_found = True
-                    break
-            if pp_found:
-                # we should check this field in the 'patternProperties' keyword, so skip it
-                continue
-
             self.property["program"](path + [k], v, errors)
+
+    def program_with_properties(self, path: PATH, value: dict, errors: ERRORS):
+        for k, v in value.items():
+            if k not in self.property["properties"]:
+                self.property["program"](path + [k], v, errors)
+
+    def program_with_pp(self, path: PATH, value: dict, errors: ERRORS):
+        for k, v in value.items():
+            for pattern in self.property["patternProperties"]:
+                if pattern.match(k):
+                    break
+            else:
+                self.property["program"](path + [k], v, errors)
+
+    def program_with_properties_and_pp(self, path: PATH, value: dict, errors: ERRORS):
+        for k, v in value.items():
+            if k not in self.property["properties"]:
+                for pattern in self.property["patternProperties"]:
+                    if pattern.match(k):
+                        break
+                else:
+                    self.property["program"](path + [k], v, errors)
 
     def compile(self) -> Union[None, RULE]:
         self.property["properties"] = set()
@@ -531,10 +542,17 @@ class AdditionalProperties(Keyword):
                 return self.false_program
             else:
                 self.property["program"] = self.schema.compile(self.value)
-                if self.property["program"]:
-                    return self.program
-                else:
+                if not self.property["program"]:
                     return None
+
+            if self.property["properties"] and self.property["patternProperties"]:
+                return self.program_with_properties_and_pp
+            elif self.property["properties"]:
+                return self.program_with_properties
+            elif self.property["patternProperties"]:
+                return self.program_with_pp
+            else:
+                return self.program
 
 
 class Required(Keyword):
@@ -587,7 +605,7 @@ class MaxProperties(Keyword):
     type = "object"
 
     def validate(self):
-        if type(self.value) == int:
+        if type(self.value) != int:
             raise SchemaError(self.path, "It must be an integer")
         elif self.value < 0:
             raise SchemaError(self.path, "It must be a non-negative integer")
@@ -610,7 +628,7 @@ class MinLength(Keyword):
     type = "string"
 
     def validate(self):
-        if type(self.value) == int:
+        if type(self.value) != int:
             raise SchemaError(self.path, "It must be an integer")
         elif self.value < 0:
             raise SchemaError(self.path, "It must be a non-negative integer")
@@ -631,7 +649,7 @@ class MaxLength(Keyword):
     type = "string"
 
     def validate(self):
-        if type(self.value) == int:
+        if type(self.value) != int:
             raise SchemaError(self.path, "It must be an integer")
         elif self.value < 0:
             raise SchemaError(self.path, "It must be a non-negative integer")

@@ -340,7 +340,7 @@ class Compiler:
     def ast_function(self, name_postfix: str, body: List[ast.AST],  is_entry_point: bool) -> Tuple[str, ast.FunctionDef]:
         if is_entry_point:
             args = [ast.arg("value")]
-            body = self.ast_init_variables() + body
+            body = self.ast_init_variables() + body + [ast.Return(value=ast.Name(id="errors", ctx=ast.Load()))]
         else:
             args = [ast.arg("path"), ast.arg("value"), ast.arg("errors")]
 
@@ -354,7 +354,7 @@ class Compiler:
                 kw_defaults=[],
                 defaults=[]
             ),
-            body=body + [ast.Return(value=ast.Name(id="errors", ctx=ast.Load()))],
+            body=body,
             decorator_list=[],
             lineno=0
         )

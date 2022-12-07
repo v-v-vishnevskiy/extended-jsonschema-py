@@ -34,7 +34,7 @@ from extendedjsonschema.schemas.draft_04.keywords import (
     Type,
     UniqueItems,
 )
-from extendedjsonschema.utils import PATH
+from extendedjsonschema.utils import JSON, PATH
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +77,10 @@ class Schema(BaseSchema):
         }
         self.type_keyword = Type
 
+    @staticmethod
+    def is_schema(value: JSON):
+        return isinstance(value, dict)
+
     def _type_definition(self, rules: Dict[str, Keyword]) -> Set:
         if "type" in rules:
             if type(rules["type"].value) != list:
@@ -114,8 +118,8 @@ class Schema(BaseSchema):
         return Program(general_rules, type_specific_rules, field)
 
     def compile(self, schema: dict, path: PATH = None) -> Program:
-        if type(schema) != dict:
-            raise SchemaError([], "JSON Schema must be an object")
+        if not self.is_schema(schema):
+            raise SchemaError([], "Invalid JSON Schema")
 
         if schema == {}:
             return Program()
