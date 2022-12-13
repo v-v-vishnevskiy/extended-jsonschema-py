@@ -95,8 +95,8 @@ class AllOf(Keyword):
         if type(self.value) != list:
             raise SchemaError(self.path, "It must be an array")
         for i, item in enumerate(self.value):
-            if type(item) != dict:
-                raise SchemaError(self.path + [i], "It must be an object")
+            if not self.schema.is_schema(item):
+                raise SchemaError(self.path + [i], "It must be a JSON Schema object")
 
     def compile(self) -> str:
         programs = []
@@ -116,8 +116,8 @@ class AnyOf(Keyword):
         if type(self.value) != list:
             raise SchemaError(self.path, "It must be an array")
         for i, item in enumerate(self.value):
-            if type(item) != dict:
-                raise SchemaError(self.path + [i], "It must be an object")
+            if not self.schema.is_schema(item):
+                raise SchemaError(self.path + [i], "It must be a JSON Schema object")
 
     def compile(self) -> str:
         programs = []
@@ -151,8 +151,8 @@ class OneOf(Keyword):
         if type(self.value) != list:
             raise SchemaError(self.path, "It must be an array")
         for i, item in enumerate(self.value):
-            if type(item) != dict:
-                raise SchemaError(self.path + [i], "It must be an object")
+            if not self.schema.is_schema(item):
+                raise SchemaError(self.path + [i], "It must be a JSON Schema object")
 
     def compile(self) -> str:
         programs = []
@@ -183,8 +183,8 @@ class Not(Keyword):
     name = "not"
 
     def validate(self):
-        if type(self.value) != dict:
-            raise SchemaError(self.path, "It must be an object")
+        if not self.schema.is_schema(self.value):
+            raise SchemaError(self.path, "It must be a JSON Schema object")
 
     def compile(self) -> str:
         success = f"success_{id(self)}"
@@ -207,12 +207,12 @@ class Items(Keyword):
     type = "array"
 
     def validate(self):
-        if type(self.value) not in {dict, list}:
-            raise SchemaError(self.path, "It must be an object or an array")
+        if not self.schema.is_schema(self.value) or type(self.value) != list:
+            raise SchemaError(self.path, "It must be a JSON Schema object or an array")
         if type(self.value) == list:
             for i, item in enumerate(self.value):
-                if type(item) != dict:
-                    raise SchemaError(self.path + [i], "It must be an object")
+                if not self.schema.is_schema(item):
+                    raise SchemaError(self.path + [i], "It must be a JSON Schema object")
 
     def code_list(self, program) -> str:
         data = f"data_{id(self)}"
@@ -247,8 +247,8 @@ class AdditionalItems(Keyword):
     type = "array"
 
     def validate(self):
-        if type(self.value) not in {bool, dict}:
-            raise SchemaError(self.path, "It must be a boolean or an object")
+        if not self.schema.is_schema(self.value) or type(self.value) != bool:
+            raise SchemaError(self.path, "It must be a boolean or a JSON Schema object")
 
     def code_false(self, items_tuple_programs: int) -> str:
         return f"""
