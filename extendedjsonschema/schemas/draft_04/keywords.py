@@ -207,7 +207,7 @@ class Items(Keyword):
     type = "array"
 
     def validate(self):
-        if not self.schema.is_schema(self.value) or type(self.value) != list:
+        if not self.schema.is_schema(self.value) and type(self.value) != list:
             raise SchemaError(self.path, "It must be a JSON Schema object or an array")
         if type(self.value) == list:
             for i, item in enumerate(self.value):
@@ -247,7 +247,7 @@ class AdditionalItems(Keyword):
     type = "array"
 
     def validate(self):
-        if not self.schema.is_schema(self.value) or type(self.value) != bool:
+        if not self.schema.is_schema(self.value) and type(self.value) != bool:
             raise SchemaError(self.path, "It must be a boolean or a JSON Schema object")
 
     def code_false(self, items_tuple_programs: int) -> str:
@@ -540,7 +540,7 @@ class AdditionalProperties(Keyword):
     type = "object"
 
     def validate(self):
-        if type(self.value) not in {bool, dict}:
+        if not self.schema.is_schema(self.value) and type(self.value) != bool:
             raise SchemaError(self.path, "It must be a boolean or a JSON Schema object")
 
     def code_false(self) -> str:

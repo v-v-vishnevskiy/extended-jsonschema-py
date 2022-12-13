@@ -5,7 +5,7 @@ from extendedjsonschema.schemas.draft_04.schema import Schema as SchemaDraft04
 
 class Validator:
     def __init__(self, schema_definition: dict):
-        self.schemas = {
+        self._schemas = {
             "http://json-schema.org/schema#": SchemaDraft04,
             "http://json-schema.org/draft-04/schema#": SchemaDraft04
         }
@@ -15,7 +15,7 @@ class Validator:
 
     def _schema(self, dialect: str) -> Schema:
         try:
-            return self.schemas[dialect]()
+            return self._schemas[dialect]()
         except KeyError:
             raise SchemaError(["$schema"], f"Invalid dialect (a version of JSON Schema): {dialect}")
 

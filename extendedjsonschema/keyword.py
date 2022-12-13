@@ -23,6 +23,10 @@ class Keyword:
         self.schema.imports.import_module(package, module)
 
     @property
+    def error(self) -> dict:
+        return {"keyword": self.name, "value": self.value}
+
+    @property
     def value(self):
         return self._value
 

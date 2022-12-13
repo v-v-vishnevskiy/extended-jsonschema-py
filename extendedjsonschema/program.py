@@ -25,10 +25,7 @@ class Program:
             code = keyword.compile()
             if code:
                 if not error:
-                    self._schema.state.set_error(
-                        keyword,
-                        {"keyword": keyword.name, "value": keyword.value}
-                    )
+                    self._schema.state.set_error(keyword, keyword.error)
                 format_data = {"data": data, "error": error, **self._schema.state.variables(keyword)}
                 code = code.format(**format_data).strip()
                 result.append(f"# {keyword.name}")
