@@ -1,10 +1,11 @@
+import logging
 import re
 from typing import List, Union
 
 from extendedjsonschema.errors import SchemaError
 from extendedjsonschema.keyword import Keyword
-from extendedjsonschema.tools import is_equal, non_unique_items
-from extendedjsonschema.utils import ERRORS, JSON, PATH, RULE
+from extendedjsonschema.tools import add_indent, non_unique_items
+from extendedjsonschema.utils import ERRORS, PATH, RULE
 
 
 # General
@@ -38,25 +39,27 @@ class Type(Keyword):
         else:
             raise SchemaError(self.path, "The value of this keyword must be either a string or an array of strings")
 
-    def program(self, path: PATH, value: JSON, errors: ERRORS):
-        if type(value) != self.property["compiled_value"]:
-            errors.append({"path": path, "keyword": self})
+    def code(self, t) -> str:
+        return f"""
+if type({{data}}) != {t}:
+    {{error}}
+"""
 
-    def program_list(self, path: PATH, value: JSON, errors: ERRORS):
-        if type(value) not in self.property["compiled_value"]:
-            errors.append({"path": path, "keyword": self})
+    def code_list(self) -> str:
+        return f"""
+if type({{data}}) not in {{value}}:
+    {{error}}
+"""
 
-    def compile(self) -> Union[None, RULE]:
+    def compile(self) -> str:
         if type(self.value) == str:
-            self.property["compiled_value"] = self.valid_types[self.value]
-            return self.program
+            return self.code(self.valid_types[self.value].__name__)
         else:
             if len(self.value) == 1:
-                self.property["compiled_value"] = self.valid_types[self.value[0]]
-                return self.program
+                return self.code(self.valid_types[self.value[0]].__name__)
             else:
-                self.property["compiled_value"] = {self.valid_types[t] for t in self.value}
-                return self.program_list
+                self.set_variable("value", {self.valid_types[t] for t in self.value})
+                return self.code_list()
 
 
 class Enum(Keyword):
@@ -71,18 +74,18 @@ class Enum(Keyword):
             raise SchemaError(self.path, "It must be an array, where each element is unique")
         # TODO: check intersection of `type` and `enum` values
 
-    def program(self, path: PATH, value: JSON, errors: ERRORS):
-        for enum_type, enum_value in self.property["enum_compiled"]:
-            if is_equal(type(value), enum_type, value, enum_value):
-                break
-        else:
-            errors.append({"path": path, "keyword": self})
-
-    def compile(self) -> Union[None, RULE]:
-        self.property["enum_compiled"] = []
-        for item in self.value:
-            self.property["enum_compiled"].append((type(item), item))
-        return self.program
+    def compile(self) -> str:
+        self.import_module("extendedjsonschema.tools", "is_equal")
+        self.set_variable("value", [(type(item), item) for item in self.value])
+        enum_type = f"enum_type_{id(self)}"
+        enum_data = f"enum_data_{id(self)}"
+        return f"""
+for {enum_type}, {enum_data} in {{value}}:
+    if is_equal(type({{data}}), {enum_type}, {{data}}, {enum_data}):
+        break
+else:
+    {{error}}
+"""
 
 
 # schema composition
@@ -96,15 +99,15 @@ class AllOf(Keyword):
             if type(item) != dict:
                 raise SchemaError(self.path + [i], "It must be an object")
 
-    def program(self, path: PATH, value: JSON, errors: ERRORS):
-        for p in self.property["programs"]:
-            p(path, value, errors)
-
-    def compile(self) -> Union[None, RULE]:
-        self.property["programs"] = []
-        for item in self.value:
-            self.property["programs"].append(self.schema.compile(item))
-        return self.program
+    def compile(self) -> str:
+        programs = []
+        for i, schema in enumerate(self.value):
+            code = self.schema.program(schema, self.path + [i]).compile()
+            if code:
+                programs.append(code)
+            else:
+                logging.warning(f"Validation against subschema '{self.path + [i]}' is always true")
+        return "\n".join(programs)
 
 
 class AnyOf(Keyword):
@@ -117,20 +120,29 @@ class AnyOf(Keyword):
             if type(item) != dict:
                 raise SchemaError(self.path + [i], "It must be an object")
 
-    def program(self, path: PATH, value: JSON, errors: ERRORS):
-        for p in self.property["programs"]:
-            e = []
-            p(path, value, e)
-            if not e:
-                break
-        else:
-            errors.append({"path": path, "keyword": self})
+    def compile(self) -> str:
+        programs = []
+        result = []
+        has_errors = f"has_errors_{id(self)}"
 
-    def compile(self) -> Union[None, RULE]:
-        self.property["programs"] = []
-        for item in self.value:
-            self.property["programs"].append(self.schema.compile(item))
-        return self.program
+        for i, schema in enumerate(self.value):
+            code = self.schema.program(schema, self.path + [i]).compile(error=f"{has_errors} = True")
+            if not code:
+                logging.warning(f"Validation against subschema '{self.path + [i]}' is always true")
+                return ""
+            programs.append(code)
+
+        j = 0
+        for i, code in enumerate(programs):
+            result.append(add_indent(f"# {i}", j))
+            result.append(add_indent(f"{has_errors} = False", j))
+            result.append(add_indent(code, j))
+            result.append(add_indent(f"if {has_errors}:", j))
+            j += 1
+        if result:
+            result.append(add_indent("{error}", j))
+
+        return "\n".join(result)
 
 
 class OneOf(Keyword):
@@ -143,23 +155,29 @@ class OneOf(Keyword):
             if type(item) != dict:
                 raise SchemaError(self.path + [i], "It must be an object")
 
-    def program(self, path: PATH, value: JSON, errors: ERRORS):
-        n_successes = 0
-        for p in self.property["programs"]:
-            e = []
-            p(path, value, e)
-            if not e:
-                n_successes += 1
-                if n_successes > 1:
-                    break
-        if n_successes != 1:
-            errors.append({"path": path, "keyword": self})
+    def compile(self) -> str:
+        programs = []
+        n_successes = f"n_successes_{id(self)}"
+        success = f"success_{id(self)}"
 
-    def compile(self) -> Union[None, RULE]:
-        self.property["programs"] = []
-        for item in self.value:
-            self.property["programs"].append(self.schema.compile(item))
-        return self.program
+        for i, schema in enumerate(self.value):
+            code = self.schema.program(schema, self.path + [i]).compile(error=f"{success} = 0")
+            programs.append(code)
+            if not code:
+                logging.warning(f"Validation against subschema '{self.path + [i]}' is always true")
+
+        result = [f"{n_successes} = 0"]
+        for i, code in enumerate(programs):
+            if i > 0:
+                result.append(add_indent(f"if {n_successes} < 2:", i - 1))
+            result.append(add_indent(f"# {i}", i))
+            result.append(add_indent(f"{success} = 1", i))
+            result.append(add_indent(code, i))
+        if result:
+            result.append(f"if {n_successes} != 1:")
+            result.append(add_indent("{error}"))
+
+        return "\n".join(result)
 
 
 class Not(Keyword):
@@ -169,15 +187,19 @@ class Not(Keyword):
         if type(self.value) != dict:
             raise SchemaError(self.path, "It must be an object")
 
-    def program(self, path: PATH, value: JSON, errors: ERRORS):
-        errs = []
-        self.property["program"](path, value, errs)
-        if not errs:
-            errors.append({"path": path, "keyword": self})
-
-    def compile(self) -> Union[None, RULE]:
-        self.property["program"] = self.schema.compile(self.value)
-        return self.program
+    def compile(self) -> str:
+        success = f"success_{id(self)}"
+        code = self.schema.program(self.value).compile(error=f"{success} = False")
+        if not code:
+            logging.warning(f"Validation against subschema '{self.path}' is always true")
+            return "{error}"
+        else:
+            return "\n".join([
+                f"{success} = True",
+                code,
+                f"if {success} is True:",
+                add_indent("{error}")
+            ])
 
 
 # Array
@@ -193,22 +215,32 @@ class Items(Keyword):
                 if type(item) != dict:
                     raise SchemaError(self.path + [i], "It must be an object")
 
-    def program_list(self, path: PATH, value: List[JSON], errors: ERRORS):
-        for i, item in enumerate(value):
-            self.property["program"](path + [i], item, errors)
-
-    def program_tuple(self, path: PATH, value: List[JSON], errors: ERRORS):
-        for i in range(min(self.property["n_programs"], len(value))):
-            self.property["programs"][i](path + [i], value[i], errors)
-
-    def compile(self) -> Union[None, RULE]:
-        if type(self.value) == dict:
-            self.property["program"] = self.schema.compile(self.value)
-            return self.program_list
+    def code_list(self, program) -> str:
+        data = f"data_{id(self)}"
+        code = program.compile(data=data)
+        if code:
+            return f"""
+for i_{id(self)}, {data} in enumerate({{data}}):
+{add_indent(code)}
+"""
         else:
-            self.property["programs"] = [self.schema.compile(item) for item in self.value]
-            self.property["n_programs"] = len(self.property["programs"])
-            return self.program_tuple
+            return ""
+
+    def code_tuple(self, programs: list) -> str:
+        data_len = f"data_len_{id(self)}"
+        result = [f"{data_len} = len({{data}})"]
+        for i, p in enumerate(programs):
+            code = p.compile(data_slice=i)
+            if code:
+                result.append(f"if {data_len} > {i}:")
+                result.append(add_indent(code))
+        return "\n".join(result)
+
+    def compile(self) -> str:
+        if type(self.value) == list:
+            return self.code_tuple([self.schema.program(item, self.path + [i]) for i, item in enumerate(self.value)])
+        else:
+            return self.code_list(self.schema.program(self.value))
 
 
 class AdditionalItems(Keyword):
@@ -219,34 +251,40 @@ class AdditionalItems(Keyword):
         if type(self.value) not in {bool, dict}:
             raise SchemaError(self.path, "It must be a boolean or an object")
 
-    def false_program(self, path: PATH, value: list, errors: ERRORS):
-        if len(value) > self.property["items_tuple_programs"]:
-            for i in range(self.property["items_tuple_programs"], len(value)):
-                errors.append({"path": path + [i], "keyword": self})
+    def code_false(self, items_tuple_programs: int) -> str:
+        return f"""
+if len({{data}}) > {items_tuple_programs}:
+    for i_{id(self)} in range({items_tuple_programs}, len({{data}})):
+        {{error}}
+"""
 
-    def program(self, path: PATH, value: list, errors: ERRORS):
-        if len(value) > self.property["items_tuple_programs"]:
-            for i in range(self.property["items_tuple_programs"], len(value)):
-                self.property["program"](path + [i], value[i], errors)
+    def code(self, items_tuple_programs: int, program) -> str:
+        data_slice = f"i_{id(self)}"
+        code = program.compile(data_slice=data_slice)
+        if code:
+            return f"""
+if len({{data}}) > {items_tuple_programs}:
+    for {data_slice} in range({items_tuple_programs}, len({{data}})):
+{add_indent(code, 2)}
+"""
+        else:
+            return ""
 
-    def compile(self) -> Union[None, RULE]:
-        self.property["items_tuple_programs"] = 0
+    def compile(self) -> str:
+        items_tuple_programs = 0
         if "items" in self.rules:
             if type(self.rules["items"].value) == dict:
-                return None
+                return ""
             elif type(self.rules["items"].value) == list:
-                self.property["items_tuple_programs"] = len(self.rules["items"].value)
+                items_tuple_programs = len(self.rules["items"].value)
 
         if self.value is True:
-            return None
+            return ""
         elif self.value is False:
-            return self.false_program
+            return self.code_false(items_tuple_programs)
         else:
-            self.property["program"] = self.schema.compile(self.value)
-            if self.property["program"]:
-                return self.program
-            else:
-                return None
+            program = self.schema.program(self.value)
+            return self.code(items_tuple_programs, program)
 
 
 class MinItems(Keyword):
@@ -259,12 +297,11 @@ class MinItems(Keyword):
         elif self.value < 0:
             raise SchemaError(self.path, "It must be a non-negative integer")
 
-    def program(self, path: PATH, value: str, errors: ERRORS):
-        if len(value) < self.value:
-            errors.append({"path": path, "keyword": self})
-
-    def compile(self) -> Union[None, RULE]:
-        return self.program
+    def compile(self) -> str:
+        return f"""
+if len({{data}}) < {self.value}:
+    {{error}}
+"""
 
 
 class MaxItems(Keyword):
@@ -281,12 +318,11 @@ class MaxItems(Keyword):
             if self.value < self.rules["minItems"].value:
                 raise SchemaError(self.path, "It must be greater or equal to `minItems`")
 
-    def program(self, path: PATH, value: str, errors: ERRORS):
-        if len(value) > self.value:
-            errors.append({"path": path, "keyword": self})
-
-    def compile(self) -> Union[None, RULE]:
-        return self.program
+    def compile(self) -> str:
+        return f"""
+if len({{data}}) > {self.value}:
+    {{error}}
+"""
 
 
 class UniqueItems(Keyword):
@@ -297,15 +333,15 @@ class UniqueItems(Keyword):
         if type(self.value) != bool:
             raise SchemaError(self.path, "It must be a boolean")
 
-    def program(self, path: PATH, value: List[JSON], errors: ERRORS):
-        for i in sorted(non_unique_items(value)):
-            errors.append({"path": path + [i], "keyword": self})
-
-    def compile(self) -> Union[None, RULE]:
+    def compile(self) -> str:
         if self.value:
-            return self.program
+            self.import_module("extendedjsonschema.tools", "non_unique_items")
+            return f"""
+for i_{id(self)} in sorted(non_unique_items({{data}})):
+    {{error}}
+"""
         else:
-            return None
+            return ""
 
 
 # Number and Integer
@@ -319,12 +355,11 @@ class MultipleOf(Keyword):
         elif self.value < 0:
             raise SchemaError(self.path, "It must be strictly greater than 0")
 
-    def program(self, path: PATH, value: Union[int, float], errors: ERRORS):
-        if value % self.value != 0:
-            errors.append({"path": path, "keyword": self})
-
-    def compile(self) -> Union[None, RULE]:
-        return self.program
+    def compile(self) -> str:
+        return f"""
+if {{data}} % {self.value} != 0:
+    {{error}}
+"""
 
 
 class Minimum(Keyword):
@@ -335,19 +370,23 @@ class Minimum(Keyword):
         if type(self.value) not in {int, float}:
             raise SchemaError(self.path, "It must be an integer or a number")
 
-    def program_strict(self, path: PATH, value: Union[int, float], errors: ERRORS):
-        if value <= self.value:
-            return errors.append({"path": path, "keyword": self})
+    def code_strict(self) -> str:
+        return f"""
+if {{data}} <= {self.value}:
+    {{error}}
+"""
 
-    def program(self, path: PATH, value: Union[int, float], errors: ERRORS):
-        if value < self.value:
-            errors.append({"path": path, "keyword": self})
+    def code(self) -> str:
+        return f"""
+if {{data}} < {self.value}:
+    {{error}}
+"""
 
-    def compile(self) -> Union[None, RULE]:
+    def compile(self) -> str:
         if "exclusiveMinimum" in self.rules and self.rules["exclusiveMinimum"].value is True:
-            return self.program_strict
+            return self.code_strict()
         else:
-            return self.program
+            return self.code()
 
 
 class Maximum(Keyword):
@@ -362,19 +401,23 @@ class Maximum(Keyword):
             if self.value < self.rules["minimum"].value:
                 raise SchemaError(self.path, "It must be greater or equal to `minimum`")
 
-    def program_strict(self, path: PATH, value: Union[int, float], errors: ERRORS):
-        if value >= self.value:
-            errors.append({"path": path, "keyword": self})
+    def code_strict(self) -> str:
+        return f"""
+if {{data}} >= {self.value}:
+    {{error}}
+"""
 
-    def program(self, path: PATH, value: Union[int, float], errors: ERRORS):
-        if value > self.value:
-            errors.append({"path": path, "keyword": self})
+    def code(self) -> str:
+        return f"""
+if {{data}} > {self.value}:
+    {{error}}
+"""
 
-    def compile(self) -> Union[None, RULE]:
+    def compile(self) -> str:
         if "exclusiveMaximum" in self.rules and self.rules["exclusiveMaximum"].value is True:
-            return self.program_strict
+            return self.code_strict()
         else:
-            return self.program
+            return self.code()
 
 
 class ExclusiveMinimum(Keyword):
@@ -385,8 +428,8 @@ class ExclusiveMinimum(Keyword):
         if type(self.value) != bool:
             raise SchemaError(self.path, "It must be a boolean")
 
-    def compile(self) -> Union[None, RULE]:
-        return None
+    def compile(self) -> str:
+        return ""
 
 
 class ExclusiveMaximum(Keyword):
@@ -397,13 +440,12 @@ class ExclusiveMaximum(Keyword):
         if type(self.value) != bool:
             raise SchemaError(self.path, "It must be a boolean")
 
-    def compile(self) -> Union[None, RULE]:
-        return None
+    def compile(self) -> str:
+        return ""
 
 
 # Object
 class Properties(Keyword):
-    # TODO: move `patternProperties` and `additionalProperties` here for speedy code
     name = "properties"
     type = "object"
 
@@ -419,16 +461,18 @@ class Properties(Keyword):
                 if not self.schema.is_schema(value):
                     raise SchemaError(self.path + [key], "It must be a JSON Schema object")
 
-    def program(self, path: PATH, value: dict, errors: ERRORS):
-        for prop, p in self.property["programs"].items():
-            if prop in value:
-                p(path + [prop], value[prop], errors)
+    def compile(self) -> str:
+        programs = {}
+        for prop, schema in self.value.items():
+            code = self.schema.program(schema, self.path + [prop]).compile(data_slice=prop)
+            if code:
+                programs[prop] = code
 
-    def compile(self) -> Union[None, RULE]:
-        self.property["programs"] = {}
-        for k, v in self.value.items():
-            self.property["programs"][k] = self.schema.compile(v, self.path + [k])
-        return self.program
+        result = []
+        for prop, code in programs.items():
+            result.append(f"""if "{prop}" in {{data}}:""")
+            result.append(add_indent(code))
+        return "\n".join(result)
 
 
 class PatternProperties(Keyword):
@@ -453,29 +497,43 @@ class PatternProperties(Keyword):
             except re.error:
                 raise SchemaError(self.path, "It must be an object, where each key is a valid regular expression")
 
-    def program(self, path: PATH, value: dict, errors: ERRORS):
-        for pattern, prog in self.property["programs"]:
-            for field_name, field_value in value.items():
-                if pattern.match(field_name):
-                    prog(path + [field_name], field_value, errors)
+    def code(self, codes: List[str]) -> str:
+        prop = f"prop_{id(self)}"
+        data = f"data_{id(self)}"
 
-    def program_with_properties(self, path: PATH, value: dict, errors: ERRORS):
-        for pattern, prog in self.property["programs"]:
-            for field_name, field_value in value.items():
-                if field_name not in self.property["properties"] and pattern.match(field_name):
-                    prog(path + [field_name], field_value, errors)
+        result = [f"for {prop}, {data} in {{data}}.items():"]
+        for i, code in enumerate(codes):
+            result.append(add_indent(f"if {{pattern_{i}}}.match({prop}):", 1))
+            result.append(add_indent(code, 2))
 
-    def compile(self) -> Union[None, RULE]:
-        self.property["programs"] = {}
-        self.property["properties"] = set()
+        return "\n".join(result)
+
+    def code_with_properties(self, codes: List[str]) -> str:
+        prop = f"prop_{id(self)}"
+        data = f"data_{id(self)}"
+
+        result = [f"for {prop}, {data} in {{data}}.items():"]
+        for i, code in enumerate(codes):
+            result.append(add_indent(f"if {prop} not in {{properties}}:"))
+            result.append(add_indent(f"if {{pattern_{i}}}.match({prop}):", 2))
+            result.append(add_indent(code, 3))
+
+        return "\n".join(result)
+
+    def compile(self) -> str:
+        self.import_package("re")
+
+        programs = []
+        for i, pattern in enumerate(self.value.keys()):
+            self.set_variable(f"pattern_{i}", re.compile(pattern))
+            program = self.schema.program(self.value[pattern], self.path + [pattern])
+            programs.append(program.compile(data=f"data_{id(self)}"))
+
         if "properties" in self.rules:
-            self.property["properties"] = set(self.rules["properties"].value.keys())
-        for k, v in self.value.items():
-            self.property["programs"].append((re.compile(k), self.schema.compile(v, self.path + [k])))
-        if self.property["properties"]:
-            return self.program_with_properties
+            self.set_variable("properties", set(self.rules["properties"].value.keys()))
+            return self.code_with_properties(programs)
         else:
-            return self.program
+            return self.code(programs)
 
 
 class AdditionalProperties(Keyword):
@@ -486,73 +544,88 @@ class AdditionalProperties(Keyword):
         if type(self.value) not in {bool, dict}:
             raise SchemaError(self.path, "It must be a boolean or a JSON Schema object")
 
-    def false_program(self, path: PATH, value: dict, errors: ERRORS):
-        for k in value.keys():
-            if k in self.property["properties"]:
-                continue
+    def code_false(self) -> str:
+        return f"""
+for prop_{id(self)} in {{data}}.keys():
+    if prop_{id(self)} in {{properties}}:
+        continue
 
-            for pp_prog in self.property["patternProperties"]:
-                # TODO: use cache for checking regular expressions
-                if pp_prog(k):
-                    break
-            else:
-                errors.append({"path": path + [k], "keyword": self})
+    for pp_{id(self)} in {{pattern_properties}}:
+        if pp_{id(self)}.match(prop_{id(self)}):
+            break
+    else:
+        {{error}}
+"""
 
-    def program(self, path: PATH, value: dict, errors: ERRORS):
-        for k, v in value.items():
-            self.property["program"](path + [k], v, errors)
+    def code(self, code: str) -> str:
+        return f"""
+for prop_{id(self)}, data_{id(self)} in {{data}}.items():
+{add_indent(code)}
+"""
 
-    def program_with_properties(self, path: PATH, value: dict, errors: ERRORS):
-        for k, v in value.items():
-            if k not in self.property["properties"]:
-                self.property["program"](path + [k], v, errors)
+    def code_with_properties(self, code: str) -> str:
+        return f"""
+for prop_{id(self)}, data_{id(self)} in {{data}}.items():
+    if prop_{id(self)} not in {{properties}}:
+{add_indent(code, 2)}
+"""
 
-    def program_with_pp(self, path: PATH, value: dict, errors: ERRORS):
-        for k, v in value.items():
-            for pattern in self.property["patternProperties"]:
-                if pattern.match(k):
-                    break
-            else:
-                self.property["program"](path + [k], v, errors)
+    def code_with_pp(self, code: str) -> str:
+        return f"""
+for prop_{id(self)}, data_{id(self)} in {{data}}.items():
+    for pattern_{id(self)} in {{pattern_properties}}:
+        if pattern_{id(self)}.match(prop_{id(self)}):
+            break
+    else:
+{add_indent(code, 2)}
+"""
 
-    def program_with_properties_and_pp(self, path: PATH, value: dict, errors: ERRORS):
-        for k, v in value.items():
-            if k not in self.property["properties"]:
-                for pattern in self.property["patternProperties"]:
-                    if pattern.match(k):
-                        break
-                else:
-                    self.property["program"](path + [k], v, errors)
+    def code_with_properties_and_pp(self, code: str) -> str:
+        return f"""
+for prop_{id(self)}, data_{id(self)} in {{data}}.items():
+    if prop_{id(self)} not in {{properties}}:
+        for pattern_{id(self)} in {{pattern_properties}}:
+            if pattern_{id(self)}.match(prop_{id(self)}):
+                break
+        else:
+{add_indent(code, 3)}
+"""
 
-    def compile(self) -> Union[None, RULE]:
-        self.property["properties"] = set()
-        self.property["patternProperties"] = []
+    def compile(self) -> str:
+        properties = set()
+        pattern_properties = []
 
         if self.value is True:
-            return None
+            return ""
         else:
             if "properties" in self.rules:
-                self.property["properties"] = set(self.rules["properties"].value.keys())
+                properties = set(self.rules["properties"].value.keys())
 
             if "patternProperties" in self.rules:
                 for regexp_property in self.rules["patternProperties"].value.keys():
-                    self.property["patternProperties"].append(re.compile(regexp_property))
+                    pattern_properties.append(re.compile(regexp_property))
 
             if self.value is False:
-                return self.false_program
+                self.set_variable("properties", properties)
+                self.set_variable("pattern_properties", pattern_properties)
+                return self.code_false()
             else:
-                self.property["program"] = self.schema.compile(self.value)
-                if not self.property["program"]:
-                    return None
+                code = self.schema.program(self.value).compile(data=f"data_{id(self)}")
+                if not code:
+                    return ""
 
-            if self.property["properties"] and self.property["patternProperties"]:
-                return self.program_with_properties_and_pp
-            elif self.property["properties"]:
-                return self.program_with_properties
-            elif self.property["patternProperties"]:
-                return self.program_with_pp
+            if properties and pattern_properties:
+                self.set_variable("properties", properties)
+                self.set_variable("pattern_properties", pattern_properties)
+                return self.code_with_properties_and_pp(code)
+            elif properties:
+                self.set_variable("properties", properties)
+                return self.code_with_properties(code)
+            elif pattern_properties:
+                self.set_variable("pattern_properties", pattern_properties)
+                return self.code_with_pp(code)
             else:
-                return self.program
+                return self.code(code)
 
 
 class Required(Keyword):
@@ -567,16 +640,16 @@ class Required(Keyword):
         elif len(self.value) != len(set(self.value)):
             raise SchemaError(self.path, "It must be an array of strings, where each element is unique")
 
-    def program(self, path: PATH, value: dict, errors: ERRORS):
-        for field in self.value:
-            if field not in value:
-                errors.append({"path": path + [field], "keyword": self})
-
-    def compile(self) -> Union[None, RULE]:
+    def compile(self) -> str:
         if self.value:
-            return self.program
+            self.set_variable("value", self.value)
+            return f"""
+for field_{id(self)} in {{value}}:
+    if field_{id(self)} not in {{data}}:
+        {{error}}
+"""
         else:
-            return None
+            return ""
 
 
 class MinProperties(Keyword):
@@ -589,15 +662,14 @@ class MinProperties(Keyword):
         elif self.value < 0:
             raise SchemaError(self.path, "It must be a non-negative integer")
 
-    def program(self, path: PATH, value: dict, errors: ERRORS):
-        if len(value.keys()) < self.value:
-            errors.append({"path": path, "keyword": self})
-
-    def compile(self) -> Union[None, RULE]:
+    def compile(self) -> str:
         if self.value == 0:
-            return None
+            return ""
         else:
-            return self.program
+            return f"""
+if len({{data}}.keys()) < {self.value}:
+    {{error}}
+"""
 
 
 class MaxProperties(Keyword):
@@ -614,12 +686,11 @@ class MaxProperties(Keyword):
             if self.value < self.rules["minProperties"].value:
                 raise SchemaError(self.path, "It must be greater or equal to `minProperties`")
 
-    def program(self, path: PATH, value: dict, errors: ERRORS):
-        if len(value.keys()) > self.value:
-            errors.append({"path": path, "keyword": self})
-
-    def compile(self) -> Union[None, RULE]:
-        return self.program
+    def compile(self) -> str:
+        return f"""
+if len({{data}}.keys()) > {self.value}:
+    {{error}}
+"""
 
 
 # String
@@ -633,15 +704,14 @@ class MinLength(Keyword):
         elif self.value < 0:
             raise SchemaError(self.path, "It must be a non-negative integer")
 
-    def program(self, path: PATH, value: str, errors: ERRORS):
-        if len(value) < self.value:
-            errors.append({"path": path, "keyword": self})
-
-    def compile(self) -> Union[None, RULE]:
+    def compile(self) -> str:
         if self.value == 0:
-            return None
+            return ""
         else:
-            return self.program
+            return f"""
+if len({{data}}) < {self.value}:
+    {{error}}
+"""
 
 
 class MaxLength(Keyword):
@@ -658,12 +728,14 @@ class MaxLength(Keyword):
             if self.value < self.rules["minLength"].value:
                 raise SchemaError(self.path, "It must be greater or equal to `minLength`")
 
-    def program(self, path: PATH, value: str, errors: ERRORS):
-        if len(value) > self.value:
-            errors.append({"path": path, "keyword": self})
+    def code(self) -> str:
+        return f"""
+if len(value) > {self.value}:
+    {{error}}
+"""
 
-    def compile(self) -> Union[None, RULE]:
-        return self.program
+    def compile(self) -> str:
+        return self.code()
 
 
 class Pattern(Keyword):
@@ -676,13 +748,13 @@ class Pattern(Keyword):
         except re.error:
             raise SchemaError(self.path, "Invalid regular expression")
 
-    def program(self, path: PATH, value: str, errors: ERRORS):
-        if not self.property["pattern"].match(value):
-            errors.append({"path": path, "keyword": self})
-
-    def compile(self) -> Union[None, RULE]:
-        self.property["pattern"] = re.compile(self.value)
-        return self.program
+    def compile(self) -> str:
+        self.import_package("re")
+        self.set_variable("pattern", re.compile(self.value))
+        return f"""
+if not {{pattern}}.match({{data}}):
+    {{error}}
+"""
 
 
 class Format(Keyword):

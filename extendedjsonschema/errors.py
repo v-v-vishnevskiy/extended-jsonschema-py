@@ -1,7 +1,11 @@
 from extendedjsonschema.utils import PATH
 
 
-class SchemaError(Exception):
+class Error(Exception):
+    pass
+
+
+class SchemaError(Error):
     def __init__(self, path: PATH, msg: str):
         super().__init__(f"'{'.'.join(str(p) for p in path)}' - {str(msg)}")
         self.msg = msg
@@ -11,11 +15,11 @@ class SchemaError(Exception):
         return f"'{'.'.join(str(p) for p in self.path)}' - {str(self.msg)}"
 
 
-class CompilerError(Exception):
+class CompilerError(Error):
     pass
 
 
-class ValidationError(Exception):
+class ValidationError(Error):
     def __init__(self, errors):
         """
         errors = [

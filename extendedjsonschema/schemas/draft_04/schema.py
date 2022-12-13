@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 class Schema(BaseSchema):
     def __init__(self):
+        super().__init__()
         self.keywords: Dict[str, Type[Keyword]] = {
             # General
             Enum.name: Enum,
@@ -81,59 +82,57 @@ class Schema(BaseSchema):
     def is_schema(value: JSON):
         return isinstance(value, dict)
 
-    def _type_definition(self, rules: Dict[str, Keyword]) -> Set:
-        if "type" in rules:
-            if type(rules["type"].value) != list:
-                return {rules["type"].value}
+    def _type_definition(self, keywords: Dict[str, Keyword]) -> Set:
+        if "type" in keywords:
+            if type(keywords["type"].value) != list:
+                return {keywords["type"].value}
             else:
-                return set(rules["type"].value)
+                return set(keywords["type"].value)
         else:
             return set()
 
-    def _delete_unused_keywords(self, rules: Dict[str, Keyword], path: List[Union[str, int]]):
-        type_definition = self._type_definition(rules)
+    def _delete_unused_keywords(self, keywords: Dict[str, Keyword], path: List[Union[str, int]]):
+        type_definition = self._type_definition(keywords)
         if type_definition:
-            for key in list(rules.keys()):
-                rule = rules[key]
+            for key in list(keywords.keys()):
+                rule = keywords[key]
                 if rule.type:
                     types = set(rule.type) if type(rule.type) == tuple else {rule.type}
                     if not types & type_definition:
                         logger.warning(f"`{'.'.join((str(p) for p in path + [rule.name]))}` keyword will never be used")
-                        del rules[key]
+                        del keywords[key]
 
-    def _compile(self, rules: Dict[str, Keyword], field: str) -> Program:
-        type_definition = self._type_definition(rules)
-        general_rules = []
-        type_specific_rules = defaultdict(list)
-        for rule in rules.values():
-            program = rule.compile()
-            if program:
-                if not rule.type:
-                    general_rules.append((program, rule))
-                else:
-                    for t in (rule.type if type(rule.type) == tuple else [rule.type]):
-                        if not type_definition or (type_definition and t in type_definition):
-                            type_specific_rules[self.type_keyword.valid_types[t]].append((program, rule))
+    def _program(self, keywords: Dict[str, Keyword], field: str) -> Program:
+        type_definition = self._type_definition(keywords)
+        general_rules: List[Keyword] = []
+        type_specific_rules: Dict[type: List[Keyword]] = defaultdict(list)
+        for keyword in keywords.values():
+            if not keyword.type:
+                general_rules.append(keyword)
+            else:
+                for t in (keyword.type if type(keyword.type) == tuple else [keyword.type]):
+                    if not type_definition or t in type_definition:
+                        type_specific_rules[self.type_keyword.valid_types[t]].append(keyword)
 
-        return Program(general_rules, type_specific_rules, field)
+        return Program(self, general_rules, type_specific_rules, field)
 
-    def compile(self, schema: dict, path: PATH = None) -> Program:
+    def program(self, schema: dict, path: PATH = None) -> Program:
         if not self.is_schema(schema):
             raise SchemaError([], "Invalid JSON Schema")
 
         if schema == {}:
-            return Program()
+            return Program(self)
 
         path = path or []
 
-        rules: Dict[str, Keyword] = {}
+        keywords: Dict[str, Keyword] = {}
         for key, value in schema.items():
             if key in self.keywords:
-                rules[key] = self.keywords[key](value, self, path + [key], rules)
+                keywords[key] = self.keywords[key](value, self, path + [key], keywords)
 
-        for rule in rules.values():
-            rule.validate()
+        for keyword in keywords.values():
+            keyword.validate()
 
-        self._delete_unused_keywords(rules, path)
+        self._delete_unused_keywords(keywords, path)
 
-        return self._compile(rules, path[-1] if path else "")
+        return self._program(keywords, path[-1] if path else "")
