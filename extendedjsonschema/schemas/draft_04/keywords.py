@@ -1,11 +1,10 @@
 import logging
 import re
-from typing import List, Union
+from typing import List
 
 from extendedjsonschema.errors import SchemaError
 from extendedjsonschema.keyword import Keyword
 from extendedjsonschema.tools import add_indent, non_unique_items
-from extendedjsonschema.utils import ERRORS, PATH, RULE
 
 
 # General
@@ -766,94 +765,127 @@ class Format(Keyword):
         if self.value not in self.valid_formats:
             raise SchemaError(self.path, f"Invalid format: {self.value}")
 
-    def _datetime_program(self, path: PATH, value: str, errors: ERRORS):
-        if not self.property["datetime"].match(value):
-            errors.append({"path": path, "keyword": self})
+    def _code_datetime(self) -> str:
+        return """
+if not {datetime}.match({value}):
+    {error}
+"""
 
-    def _email_program(self, path: PATH, value: str, errors: ERRORS):
+    def _code_email(self) -> str:
+        name = f"name_{id(self)}"
+        domain = f"domain_{id(self)}"
+        return f"""
+try:
+    {name}, {domain} = {{value}}.split("@", 1)
+    if not {name} or not {domain} or {{bad_email_name}}.match({name}) or {{bad_email_domain}}.match({domain}):
+        {{error}}
+except ValueError:
+    {{error}}
+"""
+
+    def _code_hostname(self) -> str:
+        return """
+if not {value} or {bad_hostname}.match({value}):
+    {error}
+"""
+
+    def _code_ipv4(self) -> str:
+        parts = f"parts_{id(self)}"
+        part = f"part_{id(self)}"
+        return f"""
+{parts} = {{value}}.split(".")
+
+if len({parts}) == 4:
+    for {part} in {parts}:
         try:
-            name, domain = value.split("@", 1)
+            if len({part}) == 0 or ({part}[0] == "0" and len({part}) > 1) or not (-1 < int({part}) < 256):
+                {{error}}
+                break
         except ValueError:
-            errors.append({"path": path, "keyword": self})
-            return
+            {{error}}
+            break
+else:
+    {{error}}
+"""
 
-        if not name or not domain or self.property["bad_email_name"].match(name) or self.property["bad_email_domain"].match(domain):
-            errors.append({"path": path, "keyword": self})
+    def _code_ipv6(self) -> str:
+        parts = f"parts_{id(self)}"
+        part = f"part_{id(self)}"
+        empty_parts = f"empty_parts_{id(self)}"
+        return f"""
+{parts} = {{value}}.split(":")
 
-    def _hostname_program(self, path: PATH, value: str, errors: ERRORS):
-        if not value or self.property["bad_hostname"].match(value):
-            errors.append({"path": path, "keyword": self})
-
-    def _ipv4_program(self, path: PATH, value: str, errors: ERRORS):
-        parts = value.split(".")
-
-        if len(parts) != 4:
-            errors.append({"path": path, "keyword": self})
-            return
-
-        for part in parts:
-            try:
-                if (part[0] == "0" and len(part) > 1) or not (-1 < int(part) < 256):
-                    errors.append({"path": path, "keyword": self})
-                    return
-            except ValueError:
-                errors.append({"path": path, "keyword": self})
-
-    def _ipv6_program(self, path: PATH, value: str, errors: ERRORS):
-        parts = value.split(":")
-
-        if len(parts) > 8:
-            errors.append({"path": path, "keyword": self})
-            return
-
-        empty_parts = 0
-        for part in parts:
-            if not part:
-                empty_parts += 1
-                continue
-            try:
-                if (len(part) > 1 and part[0] == "0") or not (-1 < int(part, 16) < 65536):
-                    errors.append({"path": path, "keyword": self})
-                    return
-            except ValueError:
-                errors.append({"path": path, "keyword": self})
-                return
-
-        if empty_parts > 3 or empty_parts > 1 and len(parts) > 4:
-            errors.append({"path": path, "keyword": self})
-
-    def _uri_program(self, path: PATH, value: str, errors: ERRORS):
+if len({parts}) < 9:
+    {empty_parts} = 0
+    for {part} in {parts}:
+        if not {part}:
+            {empty_parts} += 1
+            continue
         try:
-            scheme, hier_part = value.split(":", 1)
+            if (len({part}) > 1 and {part}[0] == "0") or not (-1 < int({part}, 16) < 65536):
+                {{error}}
+                break
         except ValueError:
-            errors.append({"path": path, "keyword": self})
-            return
+            {{error}}
+            break
 
-        if not scheme or not hier_part or self.property["bad_uri_scheme"].match(scheme):
-            errors.append({"path": path, "keyword": self})
-            return
+    if {empty_parts} > 3 or {empty_parts} > 1 and len({parts}) > 4:
+        {{error}}
+else:
+    {{error}}
+"""
 
+    def _code_uri(self) -> str:
+        scheme = f"scheme_{id(self)}"
+        hier_part = f"hier_part_{id(self)}"
+        return f"""
+try:
+    {scheme}, {hier_part} = {{value}}.split(":", 1)
+    if {scheme} and {hier_part} and not {{bad_uri_scheme}}.match({scheme}):
         # Authority part
-        if hier_part.startswith("//"):
+        if {hier_part}.startswith("//"):
             pass
+        else:
+            {{error}}
+    else:
+        {{error}}
+except ValueError:
+    {{error}}
+"""
 
-    def compile(self) -> Union[None, RULE]:
+    def compile(self) -> str:
         if self.value == "date-time":
-            self.property["datetime"] = re.compile(r"^\d{4}-[01]\d-[0-3]\d(t|T)[0-2]\d:[0-5]\d:[0-5]\d(?:\.\d+)?(?:[+-][0-2]\d:[0-5]\d|[+-][0-2]\d[0-5]\d|z|Z)\Z")
-            return self._datetime_program
+            self.import_package("re")
+            self.set_variable(
+                "datetime",
+                re.compile(r"^\d{4}-[01]\d-[0-3]\d(t|T)[0-2]\d:[0-5]\d:[0-5]\d(?:\.\d+)?(?:[+-][0-2]\d:[0-5]\d|[+-][0-2]\d[0-5]\d|z|Z)\Z")
+            )
+            return self._code_datetime()
         elif self.value == "email":
-            self.property["bad_email_name"] = re.compile(r"(^[^a-zA-Z0-9]){1}|([^a-zA-Z0-9._+-])+|([._\-+]{2,})|([^a-zA-Z0-9]$){1}")
-            self.property["bad_email_domain"] = re.compile(r"(^[^a-zA-Z0-9]){1}|([^a-zA-Z0-9.-]+)|([.-]{2,})|([a-zA-Z0-9-]){65,}|([^a-zA-Z0-9.]$){1}")
-            return self._email_program
+            self.import_package("re")
+            self.set_variable(
+                "bad_email_name",
+                re.compile(r"(^[^a-zA-Z0-9]){1}|([^a-zA-Z0-9._+-])+|([._\-+]{2,})|([^a-zA-Z0-9]$){1}")
+            )
+            self.set_variable(
+                "bad_email_domain",
+                re.compile(r"(^[^a-zA-Z0-9]){1}|([^a-zA-Z0-9.-]+)|([.-]{2,})|([a-zA-Z0-9-]){65,}|([^a-zA-Z0-9.]$){1}")
+            )
+            return self._code_email()
         elif self.value == "hostname":
-            self.property["bad_hostname"] = re.compile(r"(^[^a-zA-Z0-9]){1}|([^a-zA-Z0-9.-]+)|([.-]{2,})|([a-zA-Z0-9-]){65,}|([^a-zA-Z0-9.]$){1}")
-            return self._hostname_program
+            self.import_package("re")
+            self.set_variable(
+                "bad_hostname",
+                re.compile(r"(^[^a-zA-Z0-9]){1}|([^a-zA-Z0-9.-]+)|([.-]{2,})|([a-zA-Z0-9-]){65,}|([^a-zA-Z0-9.]$){1}")
+            )
+            return self._code_hostname()
         elif self.value == "ipv4":
-            return self._ipv4_program
+            return self._code_ipv4()
         elif self.value == "ipv6":
-            return self._ipv6_program
+            return self._code_ipv6()
         elif self.value == "uri":
-            self.property["bad_uri_scheme"] = re.compile(r"(^[^a-zA-Z]){1}|([^a-zA-Z0-9.+-])+")
-            return self._uri_program
+            self.import_package("re")
+            self.set_variable("bad_uri_scheme", re.compile(r"(^[^a-zA-Z]){1}|([^a-zA-Z0-9.+-])+"))
+            return self._code_uri()
         else:
             SchemaError(self.path, f"Invalid format: {self.value}")
