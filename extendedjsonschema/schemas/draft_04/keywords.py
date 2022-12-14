@@ -165,14 +165,17 @@ class OneOf(Keyword):
             if not code:
                 logging.warning(f"Validation against subschema '{self.path + [i]}' is always true")
 
-        result = [f"{n_successes} = 0"]
+        result = [f"{n_successes} = 0", ""]
         for i, code in enumerate(programs):
             if i > 0:
+                result.append("")
                 result.append(add_indent(f"if {n_successes} < 2:", i - 1))
             result.append(add_indent(f"# {i}", i))
             result.append(add_indent(f"{success} = 1", i))
             result.append(add_indent(code, i))
+            result.append(add_indent(f"{n_successes} += {success}", i))
         if result:
+            result.append("")
             result.append(f"if {n_successes} != 1:")
             result.append(add_indent("{error}"))
 

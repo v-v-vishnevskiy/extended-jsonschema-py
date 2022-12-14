@@ -56,7 +56,7 @@ class State:
         keyword_id = id(keyword)
         result = {}
         for name in self._variables[keyword_id].keys():
-            result[name] = f"{keyword_id}_{name}"
+            result[name] = f"k{keyword_id}_{name}"
         if keyword_id in self._errors:
             result["error"] = f"errors.append(k{id(keyword)}_error)"
         return result
