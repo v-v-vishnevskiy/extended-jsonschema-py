@@ -2,6 +2,7 @@ import string
 from typing import Dict, List, Union
 
 from extendedjsonschema.keyword import Keyword
+from extendedjsonschema.optimizer import Optimizer
 from extendedjsonschema.tools import add_indent, to_python_code
 
 
@@ -71,16 +72,18 @@ class Program:
             return fn_body
         else:
             if fn_body:
+                fn_body = "\n".join([
+                    "def program(data):",
+                    "    errors = []",
+                    "",
+                    add_indent(fn_body.replace("{{", "{").replace("}}", "}")),
+                    "    return errors"
+                ])
+                optimizer = Optimizer()
                 return "\n\n\n".join(block for block in (
                     self._schema.imports.compile_all(),
                     self._schema.state.compile_all(),
-                    "\n".join([
-                        "def program(data):",
-                        "    errors = []",
-                        "",
-                        add_indent(fn_body.replace("{{", "{").replace("}}", "}")),
-                        "    return errors"
-                    ])
+                    optimizer.run(fn_body)
                 ) if block)
             else:
                 return "def program(data):\n    return []"

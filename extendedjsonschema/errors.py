@@ -19,6 +19,10 @@ class CompilerError(Error):
     pass
 
 
+class OptimizerError(Error):
+    pass
+
+
 class ValidationError(Error):
     def __init__(self, errors):
         """

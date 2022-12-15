@@ -60,7 +60,7 @@ if type({{data}}) not in {{value}}:
             if len(self.value) == 1:
                 return self.code(self.valid_types[self.value[0]].__name__)
             else:
-                self.set_variable("value", {self.valid_types[t] for t in self.value})
+                self.set_variable("value", tuple((self.valid_types[t] for t in self.value)))
                 return self.code_list()
 
 
@@ -78,12 +78,16 @@ class Enum(Keyword):
 
     def compile(self) -> str:
         self.import_module("extendedjsonschema.tools", "is_equal")
+        if None in self.value:
+            self.add_code("NoneType = type(None)")
         self.set_variable("value", [(type(item), item) for item in self.value])
+
         enum_type = f"enum_type_{id(self)}"
         enum_data = f"enum_data_{id(self)}"
         return f"""
+type_data_{id(self)} = type({{data}})
 for {enum_type}, {enum_data} in {{value}}:
-    if is_equal(type({{data}}), {enum_type}, {{data}}, {enum_data}):
+    if is_equal(type_data_{id(self)}, {enum_type}, {{data}}, {enum_data}):
         break
 else:
     {{error}}
