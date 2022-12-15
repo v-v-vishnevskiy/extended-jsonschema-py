@@ -13,6 +13,9 @@ class Keyword:
         self.path = path
         self.rules = rules
 
+    def add_code(self, code: str):
+        self.schema.state.add_code(code)
+
     def set_variable(self, name: str, value: Any):
         self.schema.state.set_variable(self, name, value)
 

@@ -51,6 +51,9 @@ if type({{data}}) not in {{value}}:
 """
 
     def compile(self) -> str:
+        if self.value == "null" or (type(self.value) == list and "null" in self.value):
+            self.add_code("NoneType = type(None)")
+
         if type(self.value) == str:
             return self.code(self.valid_types[self.value].__name__)
         else:

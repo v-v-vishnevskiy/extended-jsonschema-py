@@ -73,7 +73,6 @@ class Program:
             if fn_body:
                 return "\n\n\n".join(block for block in (
                     self._schema.imports.compile_all(),
-                    "NoneType = type(None)",
                     self._schema.state.compile_all(),
                     "\n".join([
                         "def program(data):",

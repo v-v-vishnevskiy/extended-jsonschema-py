@@ -41,16 +41,21 @@ class Imports:
 
 class State:
     def __init__(self):
-        self._errors = {}
+        self._code = []
         self._variables = defaultdict(dict)
+        self._errors = {}
 
-    def set_error(self, keyword: "Keyword", value: Any):
-        self._errors[id(keyword)] = value
+    def add_code(self, code: str):
+        if code not in self._code:
+            self._code.append(code)
 
     def set_variable(self, keyword: "Keyword", name: str, value: Any):
         if name in {"data", "error"}:
             raise Error(f"The '{name}' variable is defined automatically. You can't define it manually")
         self._variables[id(keyword)][name] = value
+
+    def set_error(self, keyword: "Keyword", value: Any):
+        self._errors[id(keyword)] = value
 
     def variables(self, keyword: "Keyword") -> Dict[str, str]:
         keyword_id = id(keyword)
@@ -60,6 +65,9 @@ class State:
         if keyword_id in self._errors:
             result["error"] = f"errors.append(k{id(keyword)}_error)"
         return result
+
+    def compile_code(self) -> str:
+        return "\n\n".join(self._code)
 
     def compile_variables(self) -> str:
         result = []
@@ -76,6 +84,9 @@ class State:
 
     def compile_all(self) -> str:
         result = []
+        code = self.compile_code()
+        if code:
+            result.append(code)
         variables = self.compile_variables()
         if variables:
             result.append(variables)

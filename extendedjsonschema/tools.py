@@ -76,7 +76,6 @@ def add_indent(code: str, i: int = 1) -> str:
 
 
 def to_python_code(value: Any) -> str:
-    none_type = type(None)
     value_type = type(value)
     if value_type in {list, tuple, set}:
         brackets = {list: ("[", "]"), tuple: ("(", ")"), set: ("{", "}")}
@@ -90,7 +89,7 @@ def to_python_code(value: Any) -> str:
             result.append(f"{to_python_code(k)}: {to_python_code(v)}")
         result = ", ".join(result)
         return f"{{{result}}}"
-    elif value_type in {bool, int, float, none_type}:
+    elif value_type in {bool, int, float, type(None)}:
         return str(value)
     elif value_type == str:
         return f'"{value}"'
