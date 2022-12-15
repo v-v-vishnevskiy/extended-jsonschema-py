@@ -21,22 +21,3 @@ class CompilerError(Error):
 
 class OptimizerError(Error):
     pass
-
-
-class ValidationError(Error):
-    def __init__(self, errors):
-        """
-        errors = [
-            {
-                "path": List[Union[str, int]],
-                "errors": [
-                    {
-                        "keyword": str
-                        "path": List[Union[str, int]],
-                        "value": JSON
-                    }
-                ]
-            }
-        ]
-        """
-        self.errors = errors
