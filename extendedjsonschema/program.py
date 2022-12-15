@@ -1,7 +1,8 @@
+import string
 from typing import Dict, List, Union
 
 from extendedjsonschema.keyword import Keyword
-from extendedjsonschema.tools import add_indent
+from extendedjsonschema.tools import add_indent, to_python_code
 
 
 class Program:
@@ -25,11 +26,15 @@ class Program:
             code = keyword.compile()
             if code:
                 if not error:
-                    self._schema.state.set_error(keyword, keyword.error)
+                    if self._schema.data_variable.path_has_variables:
+                        error = f"errors.append({to_python_code(keyword.error(self._schema.data_variable.path))})"
+                    else:
+                        if "error" in {v[1] for v in string.Formatter().parse(code)}:
+                            self._schema.state.set_error(keyword, keyword.error(self._schema.data_variable.path))
                 format_data = {"data": data, "error": error, **self._schema.state.variables(keyword)}
                 code = code.format(**format_data).strip()
                 result.append(f"# {keyword.name}")
-                result.append(code)
+                result.append(code.replace("{", "{{").replace("}", "}}"))
                 result.append("")
         return result[0:-1]
 
@@ -38,7 +43,7 @@ class Program:
             return ""
 
         error = kwargs.get("error")
-        data = self._schema.data_variable.push(kwargs.get("data", "data"), kwargs.get("data_slice"))
+        data = self._schema.data_variable.push(kwargs.get("data"), kwargs.get("data_path"))
 
         result = self._compile_keywords(self._general, data=data, error=error)
 
@@ -74,7 +79,7 @@ class Program:
                         "def program(data):",
                         "    errors = []",
                         "",
-                        add_indent(fn_body),
+                        add_indent(fn_body.replace("{{", "{").replace("}}", "}")),
                         "    return errors"
                     ])
                 ) if block)

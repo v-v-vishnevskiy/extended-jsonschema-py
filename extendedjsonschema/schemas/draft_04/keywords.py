@@ -4,7 +4,7 @@ from typing import List
 
 from extendedjsonschema.errors import SchemaError
 from extendedjsonschema.keyword import Keyword
-from extendedjsonschema.tools import add_indent, non_unique_items
+from extendedjsonschema.tools import add_indent, non_unique_items, Const, Variable
 
 
 # General
@@ -218,11 +218,12 @@ class Items(Keyword):
                     raise SchemaError(self.path + [i], "It must be a JSON Schema object")
 
     def code_list(self, program) -> str:
+        i = f"i_{id(self)}"
         data = f"data_{id(self)}"
-        code = program.compile(data=data)
+        code = program.compile(data=data, data_path=Variable(i))
         if code:
             return f"""
-for i_{id(self)}, {data} in enumerate({{data}}):
+for {i}, {data} in enumerate({{data}}):
 {add_indent(code)}
 """
         else:
@@ -232,7 +233,7 @@ for i_{id(self)}, {data} in enumerate({{data}}):
         data_len = f"data_len_{id(self)}"
         result = [f"{data_len} = len({{data}})"]
         for i, p in enumerate(programs):
-            code = p.compile(data_slice=i)
+            code = p.compile(data_path=Const(i))
             if code:
                 result.append(f"if {data_len} > {i}:")
                 result.append(add_indent(code))
@@ -261,12 +262,12 @@ if len({{data}}) > {items_tuple_programs}:
 """
 
     def code(self, items_tuple_programs: int, program) -> str:
-        data_slice = f"i_{id(self)}"
-        code = program.compile(data_slice=data_slice)
+        i = f"i_{id(self)}"
+        code = program.compile(data_path=Variable(i))
         if code:
             return f"""
 if len({{data}}) > {items_tuple_programs}:
-    for {data_slice} in range({items_tuple_programs}, len({{data}})):
+    for {i} in range({items_tuple_programs}, len({{data}})):
 {add_indent(code, 2)}
 """
         else:
@@ -466,7 +467,7 @@ class Properties(Keyword):
     def compile(self) -> str:
         programs = {}
         for prop, schema in self.value.items():
-            code = self.schema.program(schema, self.path + [prop]).compile(data_slice=prop)
+            code = self.schema.program(schema, self.path + [prop]).compile(data_path=Const(prop))
             if code:
                 programs[prop] = code
 
@@ -529,7 +530,7 @@ class PatternProperties(Keyword):
         for i, pattern in enumerate(self.value.keys()):
             self.set_variable(f"pattern_{i}", re.compile(pattern))
             program = self.schema.program(self.value[pattern], self.path + [pattern])
-            programs.append(program.compile(data=f"data_{id(self)}"))
+            programs.append(program.compile(data=f"data_{id(self)}", data_path=Variable(f"prop_{id(self)}")))
 
         if "properties" in self.rules:
             self.set_variable("properties", set(self.rules["properties"].value.keys()))
@@ -566,28 +567,33 @@ for prop_{id(self)}, data_{id(self)} in {{data}}.items():
 """
 
     def code_with_properties(self, code: str) -> str:
+        prop = f"prop_{id(self)}"
         return f"""
-for prop_{id(self)}, data_{id(self)} in {{data}}.items():
-    if prop_{id(self)} not in {{properties}}:
+for {prop}, data_{id(self)} in {{data}}.items():
+    if {prop} not in {{properties}}:
 {add_indent(code, 2)}
 """
 
     def code_with_pp(self, code: str) -> str:
+        prop = f"prop_{id(self)}"
+        pattern = f"pattern_{id(self)}"
         return f"""
-for prop_{id(self)}, data_{id(self)} in {{data}}.items():
-    for pattern_{id(self)} in {{pattern_properties}}:
-        if pattern_{id(self)}.match(prop_{id(self)}):
+for {prop}, data_{id(self)} in {{data}}.items():
+    for {pattern} in {{pattern_properties}}:
+        if {pattern}.match({prop}):
             break
     else:
 {add_indent(code, 2)}
 """
 
     def code_with_properties_and_pp(self, code: str) -> str:
+        prop = f"prop_{id(self)}"
+        pattern = f"pattern_{id(self)}"
         return f"""
-for prop_{id(self)}, data_{id(self)} in {{data}}.items():
-    if prop_{id(self)} not in {{properties}}:
-        for pattern_{id(self)} in {{pattern_properties}}:
-            if pattern_{id(self)}.match(prop_{id(self)}):
+for {prop}, data_{id(self)} in {{data}}.items():
+    if {prop} not in {{properties}}:
+        for {pattern} in {{pattern_properties}}:
+            if {pattern}.match({prop}):
                 break
         else:
 {add_indent(code, 3)}
@@ -612,7 +618,9 @@ for prop_{id(self)}, data_{id(self)} in {{data}}.items():
                 self.set_variable("pattern_properties", pattern_properties)
                 return self.code_false()
             else:
-                code = self.schema.program(self.value).compile(data=f"data_{id(self)}")
+                code = self.schema.program(self.value).compile(
+                    data=f"data_{id(self)}", data_path=Variable(f"prop_{id(self)}")
+                )
                 if not code:
                     return ""
 

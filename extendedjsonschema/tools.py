@@ -1,9 +1,25 @@
 import re
 
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, Union
 
 from extendedjsonschema.errors import CompilerError
+
+
+class DataIndex:
+    def __init__(self, value: Union[int, str]):
+        self.value = value
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(value={self.value})"
+
+
+class Const(DataIndex):
+    pass
+
+
+class Variable(DataIndex):
+    pass
 
 
 def is_equal(t1, t2, data1, data2):
@@ -84,5 +100,9 @@ def to_python_code(value: Any) -> str:
         return to_python_code(list(value))
     elif isinstance(value, re.Pattern):
         return str(value)
+    elif isinstance(value, Const):
+        return to_python_code(value.value)
+    elif isinstance(value, Variable):
+        return value.value
     else:
         raise CompilerError(f"Can't convert instance of '{value_type}' to python code")

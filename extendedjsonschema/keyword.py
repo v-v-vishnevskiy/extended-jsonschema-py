@@ -22,9 +22,8 @@ class Keyword:
     def import_module(self, package: str, module: str):
         self.schema.imports.import_module(package, module)
 
-    @property
-    def error(self) -> dict:
-        return {"keyword": self.name, "value": self.value}
+    def error(self, path: List[Union[int, str]]) -> dict:
+        return {"path": path, "keyword": self.name, "value": self.value}
 
     @property
     def value(self):
@@ -37,4 +36,4 @@ class Keyword:
         raise NotImplementedError("Please implement this method")
 
     def __repr__(self) -> str:
-        return f"{self.name}: {self.value}"
+        return f"{self.__class__.__name__}(value={self.value})"

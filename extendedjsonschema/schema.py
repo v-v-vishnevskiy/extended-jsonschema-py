@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Union
 
 from extendedjsonschema.errors import Error
 from extendedjsonschema.program import Program
-from extendedjsonschema.tools import to_python_code
+from extendedjsonschema.tools import to_python_code, DataIndex, Variable
 from extendedjsonschema.utils import JSON, PATH
 
 
@@ -87,19 +87,39 @@ class State:
 
 class DataVariable:
     def __init__(self):
-        self._stack: List[dict] = []
+        self._data: List[dict] = [{"name": "data", "path": []}]
+        self._path: List[Union[DataIndex, None]] = []
 
-    def push(self, name: str, ik: Union[int, str, None]) -> str:
-        data_slice = [ik] if ik not in {"", None} else []
-        if not self._stack or name != self._stack[-1]["name"]:
-            new_data_slice = data_slice
+    def push(self, name: Union[str, None], path: Union[DataIndex, None]) -> str:
+        if path is not None and not isinstance(path, DataIndex):
+            raise ValueError("The value of 'path' parameter must be an instance of subclass of 'DataIndex' class")
+
+        self._path.append(path)
+
+        name = name or self._data[-1]["name"]
+        data_path = [path] if path is not None else []
+
+        if name != self._data[-1]["name"]:
+            new_data_path = []
         else:
-            new_data_slice = self._stack[-1]["ik"][:] + data_slice
-        self._stack.append({"name": name, "ik": new_data_slice})
-        return name + "".join([f"[{to_python_code(s)}]" for s in self._stack[-1]["ik"]])
+            new_data_path = self._data[-1]["path"][:] + data_path
+        self._data.append({"name": name, "path": new_data_path})
+        return name + "".join([f"[{to_python_code(s)}]" for s in self._data[-1]["path"]])
+
+    @property
+    def path(self) -> List[DataIndex]:
+        return [item for item in self._path if item]
+
+    @property
+    def path_has_variables(self) -> bool:
+        for item in self._path:
+            if isinstance(item, Variable):
+                return True
+        return False
 
     def pop(self):
-        self._stack.pop()
+        self._data.pop()
+        self._path.pop()
 
 
 class Schema:
