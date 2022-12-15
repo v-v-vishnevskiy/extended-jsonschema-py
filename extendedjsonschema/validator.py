@@ -4,6 +4,12 @@ from extendedjsonschema.errors import SchemaError
 from extendedjsonschema.schema import Schema
 from extendedjsonschema.schemas.draft_04.schema import Schema as SchemaDraft04
 
+CYTHON = True
+try:
+    import cython
+except ModuleNotFoundError:
+    CYTHON = False
+
 
 class Validator:
     def __init__(self, schema_definition: dict):
@@ -23,9 +29,12 @@ class Validator:
             raise SchemaError(["$schema"], f"Invalid dialect (a version of JSON Schema): {dialect}")
 
     def _function(self) -> Callable:
-        state = {}
-        exec(self.source_code, state)
-        return state["program"]
+        if CYTHON:
+            return cython.inline(self.source_code, quiet=True)["program"]
+        else:
+            state = {}
+            exec(self.source_code, state)
+            return state["program"]
 
     def __repr__(self):
         return self.source_code
