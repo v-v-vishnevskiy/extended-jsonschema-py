@@ -109,7 +109,7 @@ class Optimizer:
         return ast_obj
 
     def _error_handling(self, ast_function: ast.FunctionDef):
-        if self._count_error_appending(ast_function.body) == 1:
+        if self._count_error_appending(ast_function.body, False) == 1:
             ast_function.body.pop(0)
             ast_function.body.pop(-1)
             ast_function.body = self._replace_error_appending(ast_function.body)
