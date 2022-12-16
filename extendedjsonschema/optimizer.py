@@ -84,16 +84,17 @@ class Optimizer:
         self._count_type_calling(ast_function.body)
         self._replace_type_calling(ast_function.body)
 
-    def _count_error_appending(self, ast_obj: Union[ast.AST, List[ast.AST]]) -> int:
+    def _count_error_appending(self, ast_obj: Union[ast.AST, List[ast.AST]], parent_is_loop: bool) -> int:
         result = 0
         if type(ast_obj) == ast.Call and ast.unparse(ast_obj.func) == "errors.append":
-            result += 1
+            return 2 if parent_is_loop else 1
         elif type(ast_obj) == list:
             for i, _ast_obj in enumerate(ast_obj):
-                result += self._count_error_appending(_ast_obj)
+                result += self._count_error_appending(_ast_obj, parent_is_loop)
         elif isinstance(ast_obj, ast.AST):
             for field in ast_obj._fields or []:
-                result += self._count_error_appending(getattr(ast_obj, field))
+                is_loop = parent_is_loop or field == "body" and isinstance(ast_obj, (ast.AsyncFor, ast.For, ast.While))
+                result += self._count_error_appending(getattr(ast_obj, field), is_loop)
         return result
 
     def _replace_error_appending(self, ast_obj: Union[ast.AST, List[ast.AST]]) -> Union[ast.AST, List[ast.AST]]:
