@@ -25,8 +25,8 @@ class Keyword:
     def import_module(self, package: str, module: str):
         self.schema.imports.import_module(package, module)
 
-    def error(self, path: List[Union[int, str]]) -> dict:
-        return {"path": path, "keyword": self.name, "value": self.value}
+    def errors(self, path: List[Union[int, str]]) -> dict:
+        return {"error": {"path": path, "keyword": self.name, "value": self.value}}
 
     @property
     def value(self):

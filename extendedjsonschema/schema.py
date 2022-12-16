@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Set, Union
 
 from extendedjsonschema.errors import Error
 from extendedjsonschema.program import Program
@@ -43,27 +43,35 @@ class State:
     def __init__(self):
         self._code = []
         self._variables = defaultdict(dict)
-        self._errors = {}
+        self._errors = defaultdict(dict)
+        self._used_variables = set()
 
     def add_code(self, code: str):
         if code not in self._code:
             self._code.append(code)
 
     def set_variable(self, keyword: "Keyword", name: str, value: Any):
-        if name in {"data", "error"}:
+        if name.startswith("data") or name.startswith("error"):
             raise Error(f"The '{name}' variable is defined automatically. You can't define it manually")
         self._variables[id(keyword)][name] = value
 
-    def set_error(self, keyword: "Keyword", value: Any):
-        self._errors[id(keyword)] = value
+    def set_errors(self, keyword: "Keyword", errors: Dict[str, dict]):
+        for variable, error in errors.items():
+            self._errors[id(keyword)][variable] = error
 
-    def variables(self, keyword: "Keyword") -> Dict[str, str]:
+    def variables(self, keyword: "Keyword", variables: Set[str]) -> Dict[str, str]:
         keyword_id = id(keyword)
         result = {}
         for name in self._variables[keyword_id].keys():
-            result[name] = f"k{keyword_id}_{name}"
-        if keyword_id in self._errors:
-            result["error"] = f"errors.append(k{id(keyword)}_error)"
+            if name in variables:
+                var_name = f"k{keyword_id}_{name}"
+                result[name] = var_name
+                self._used_variables.add(var_name)
+        for variable in self._errors.get(keyword_id, {}).keys():
+            if variable in variables:
+                var_name = f"k{keyword_id}_{variable}"
+                result[variable] = f"errors.append({var_name})"
+                self._used_variables.add(var_name)
         return result
 
     def compile_code(self) -> str:
@@ -73,13 +81,18 @@ class State:
         result = []
         for keyword_id, variables in self._variables.items():
             for name, value in variables.items():
-                result.append(f"k{keyword_id}_{name} = {to_python_code(value)}")
+                var_name = f"k{keyword_id}_{name}"
+                if var_name in self._used_variables:
+                    result.append(f"{var_name} = {to_python_code(value)}")
         return "\n".join(result)
 
     def compile_errors(self) -> str:
         result = []
-        for keyword_id, value in self._errors.items():
-            result.append(f"k{keyword_id}_error = {to_python_code(value)}")
+        for keyword_id, errors in self._errors.items():
+            for variable, error in errors.items():
+                var_name = f"k{keyword_id}_{variable}"
+                if var_name in self._used_variables:
+                    result.append(f"{var_name} = {to_python_code(error)}")
         return "\n".join(result)
 
     def compile_all(self) -> str:

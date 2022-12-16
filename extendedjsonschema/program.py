@@ -26,13 +26,17 @@ class Program:
         for keyword in keywords:
             code = keyword.compile()
             if code:
+                variables = {v[1] for v in string.Formatter().parse(code) if v[1]}
+                errors = {}
                 if not error:
                     if self._schema.data_variable.path_has_variables:
-                        error = f"errors.append({to_python_code(keyword.error(self._schema.data_variable.path))})"
+                        for variable, item in keyword.errors(self._schema.data_variable.path).items():
+                            errors[variable] = f"errors.append({to_python_code(item)})"
                     else:
-                        if "error" in {v[1] for v in string.Formatter().parse(code)}:
-                            self._schema.state.set_error(keyword, keyword.error(self._schema.data_variable.path))
-                format_data = {"data": data, "error": error, **self._schema.state.variables(keyword)}
+                        self._schema.state.set_errors(keyword, keyword.errors(self._schema.data_variable.path))
+                else:
+                    errors = {"error": error}
+                format_data = {"data": data, **errors, **self._schema.state.variables(keyword, variables)}
                 code = code.format(**format_data).strip()
                 result.append(f"# {keyword.name}")
                 result.append(code.replace("{", "{{").replace("}", "}}"))
