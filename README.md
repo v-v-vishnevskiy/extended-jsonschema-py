@@ -1,9 +1,13 @@
 # Extended JSON Schema
 
-Fast [JSON Schema](https://json-schema.org/) validator with additional features.
+A fast [JSON Schema](https://json-schema.org/) validator with additional features.
 
-**Warning**: This packages is early stage in active development. **DO NOT use it in production**.
+**Warning**: This packages is early stage in active development. **DO NOT use it in production yet**.
 
+
+## Features
+
+- No any other programming languages like C/C++ or Rust for speedy execution. Just pure Python and a little Cython magic under the hood.
 
 ## Basic Usage
 ```python
