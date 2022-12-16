@@ -46,7 +46,7 @@ class Optimizer:
             else:
                 ast_obj.test = isinstance_call
         elif self._type_callings[argument] > 1:
-            argument = argument.replace('"', "").replace("[", "").replace("]", "")
+            argument = argument.replace('"', "").replace("'", "").replace("[", "").replace("]", "")
             if not self._additional_code.get(argument):
                 additional_code = ast.Assign(
                     targets=[ast.Name(id=f"type_{argument}", ctx=ast.Store())],
