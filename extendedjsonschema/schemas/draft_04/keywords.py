@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import List
+from typing import List, Union
 
 from extendedjsonschema.errors import SchemaError
 from extendedjsonschema.keyword import Keyword
@@ -708,6 +708,64 @@ class MaxProperties(Keyword):
 if len({{data}}.keys()) > {self.value}:
     {{error}}
 """
+
+
+class Dependencies(Keyword):
+    name = "dependencies"
+    type = "object"
+
+    def validate(self):
+        if type(self.value) != dict:
+            raise SchemaError(self.path, "It must be an object")
+        elif len(self.value.keys()) == 0:
+            raise SchemaError(self.path, "It must be an object with at least one key-value pair")
+        elif len(list(filter(lambda x: type(x) != str or len(x) == 0, self.value.keys()))) > 0:
+            raise SchemaError(self.path, "It must be an object, where each key is a non-empty string")
+        else:
+            for key, value in self.value.items():
+                if type(value) == list:
+                    if len(list(filter(lambda x: type(x) != str or len(x) == 0, value))) > 0:
+                        raise SchemaError(
+                            self.path + [key], "It must be an array, where each element is a non-empty string"
+                        )
+                    elif non_unique_items(value):
+                        raise SchemaError(self.path + [key], "It must be an array, where each element is unique")
+                elif not self.schema.is_schema(value):
+                    raise SchemaError(self.path + [key], "It must be an array or a JSON Schema object")
+
+    def errors(self, path: List[Union[int, str]]) -> dict:
+        result = {}
+        i = 0
+        for field, value in sorted(self.value.items(), key=lambda x: x[0]):
+            if type(value) == list:
+                for j, item in enumerate(value):
+                    result[f"error_{i}_{j}"] = {"path": path + [item], "keyword": self.name, "value": self.value}
+                i += 1
+        return result
+
+    def _code_required(self, field: str, required: List[str], i: int) -> str:
+        result = [f"""if "{field}" in {{data}}:"""]
+        for j, item in enumerate(required):
+            result.append(add_indent(f"""if "{item}" not in {{data}}:""", 1))
+            result.append(add_indent(f"{{error_{i}_{j}}}", 2))
+        return "\n".join(result)
+
+    def _code_schema(self, field: str, schema: dict) -> str:
+        result = [f"""if "{field}" in {{data}}:"""]
+        code = self.schema.program(schema, self.path).compile()
+        result.append(add_indent(code, 1))
+        return "\n".join(result)
+
+    def compile(self) -> str:
+        result = []
+        i = 0
+        for field, item in sorted(self.value.items(), key=lambda x: x[0]):
+            if type(item) == list:
+                result.append(self._code_required(field, item, i))
+                i += 1
+            else:
+                result.append(self._code_schema(field, item))
+        return "\n".join(result)
 
 
 # String

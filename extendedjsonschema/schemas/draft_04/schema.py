@@ -11,6 +11,7 @@ from extendedjsonschema.schemas.draft_04.keywords import (
     AdditionalProperties,
     AllOf,
     AnyOf,
+    Dependencies,
     Enum,
     ExclusiveMaximum,
     ExclusiveMinimum,
@@ -70,6 +71,7 @@ class Schema(BaseSchema):
             Required.name: Required,
             MinProperties.name: MinProperties,
             MaxProperties.name: MaxProperties,
+            Dependencies.name: Dependencies,
             # String
             MinLength.name: MinLength,
             MaxLength.name: MaxLength,
