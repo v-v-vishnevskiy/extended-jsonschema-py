@@ -1,6 +1,6 @@
 # Extended JSON Schema
 
-A fast [JSON Schema](https://json-schema.org/) validator with additional features.
+A fast [JSON Schema](https://json-schema.org/) validator with extensions.
 
 **Warning**: This packages is early stage in active development. **DO NOT use it in production yet**.
 

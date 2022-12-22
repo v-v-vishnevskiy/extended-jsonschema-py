@@ -30,7 +30,7 @@ class Validator:
 
     def _function(self) -> Callable:
         if CYTHON:
-            return cython.inline(self.source_code, quiet=True)["program"]
+            return cython.inline(self.source_code, language_level=3, quiet=True)["program"]
         else:
             state = {}
             exec(self.source_code, state)
