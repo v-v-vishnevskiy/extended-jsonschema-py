@@ -4,6 +4,7 @@
 
 ### Features
 * Added keywords for `draft-04`
+    * `$schema`
     * `additionalItems`
     * `additionalProperties`
     * `allOf`
