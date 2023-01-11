@@ -8,6 +8,7 @@ A fast [JSON Schema](https://json-schema.org/) validator with extensions.
 ## Features
 
 - No any other programming languages like C/C++ or Rust for speedy execution. Just pure Python and a little Cython magic under the hood.
+- Checking the provided keyword values
 
 ## Installation
 `extended-jsonschema` requires Python 3.7+ and is available on PyPI:

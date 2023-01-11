@@ -3,6 +3,7 @@
 ## 0.1.0 (2022-12-22)
 
 ### Features
+* Checking the provided keyword values
 * Added keywords for `draft-04`
     * `$schema`
     * `additionalItems`
